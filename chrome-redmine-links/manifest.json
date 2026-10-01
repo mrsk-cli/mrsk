@@ -1,0 +1,20 @@
+{
+  "manifest_version": 3,
+  "name": "Redmine Links",
+  "version": "1.2.0",
+  "description": "Links GitHub issue references to Redmine and makes Redmine issue IDs copyable.",
+  "permissions": ["storage"],
+  "options_page": "options.html",
+  "content_scripts": [
+    {
+      "matches": ["https://github.com/*/*/pull/*"],
+      "js": ["content.js"],
+      "run_at": "document_idle"
+    },
+    {
+      "matches": ["https://redmine.example.com/issues/*"],
+      "js": ["redmine.js"],
+      "run_at": "document_idle"
+    }
+  ]
+}

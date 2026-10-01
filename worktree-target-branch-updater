@@ -1,0 +1,289 @@
+#!/bin/sh
+set -eu
+
+usage()
+{
+    echo "Usage: worktree-target-branch-updater <start|stop|status|run> <project-root> <main-branch>" >&2
+    exit 2
+}
+
+[ "$#" -eq 3 ] || usage
+
+if [ "$(uname -s)" != Darwin ]; then
+    echo "worktree-target-branch-updater: supported on macOS only" >&2
+    exit 1
+fi
+
+action=$1
+root=$2
+branch=$3
+# ponytail: one updater per user; add project-specific labels when parallel
+# project updaters are actually needed.
+label=io.github.mrsk-cli.worktree-target-branch-updater
+agents="$HOME/Library/LaunchAgents"
+plist="$agents/$label.plist"
+log="$HOME/.mrsk/updater.log"
+error_log="$HOME/.mrsk/updater.error.log"
+domain="gui/$(id -u)"
+service="$domain/$label"
+
+loaded()
+{
+    launchctl print "$1" >/dev/null 2>&1
+}
+
+# A suffix alone is not ownership: require the matching Label and the exact
+# updater invocation. Unknown older formats and symlinks are left untouched.
+legacy_owned()
+{
+    [ -f "$1" ] && [ ! -L "$1" ] || return 1
+    legacy_id=${1##*/}
+    legacy_id=${legacy_id%.plist}
+    [ "$legacy_id" != "$label" ] || return 1
+    case "$legacy_id" in *[!a-zA-Z0-9._-]*|'') return 1 ;; esac
+    [ "$(plutil -extract Label raw -expect string "$1" 2>/dev/null)" = "$legacy_id" ] || return 1
+    legacy_executable=$(plutil -extract ProgramArguments.0 raw -expect string "$1" 2>/dev/null) || return 1
+    case "$legacy_executable" in
+        /*/Worktree\ Target\ Branch\ Updater.app/Contents/MacOS/Worktree\ Target\ Branch\ Updater) ;;
+        *) return 1 ;;
+    esac
+    [ "$(plutil -extract ProgramArguments.1 raw -expect string "$1" 2>/dev/null)" = \
+        __worktree-target-branch-updater-run ] || return 1
+    legacy_root=$(plutil -extract ProgramArguments.2 raw -expect string "$1" 2>/dev/null) || return 1
+    case "$legacy_root" in /*) ;; *) return 1 ;; esac
+    [ -n "$(plutil -extract ProgramArguments.3 raw -expect string "$1" 2>/dev/null)" ] || return 1
+    [ "$(plutil -extract ProgramArguments raw -expect array "$1" 2>/dev/null)" = 4 ] || return 1
+    ! plutil -extract Program raw "$1" >/dev/null 2>&1 || return 1
+}
+
+prepare_migration()
+{
+    mkdir -p "$agents" "$HOME/.mrsk"
+    migration=$(mktemp -d "$HOME/.mrsk/updater.XXXXXX")
+    trap 'rm -rf "$migration"' EXIT
+    mkdir "$migration/candidates" "$migration/stopped"
+    for candidate in "$agents/"*.worktree-target-branch-updater.plist "$agents/"*.work.updater.plist; do
+        if legacy_owned "$candidate"; then
+            cp "$candidate" "$migration/candidates/$legacy_id.plist"
+        fi
+    done
+}
+
+restore_legacy()
+{
+    for stopped in "$migration/stopped/"*.plist; do
+        [ -f "$stopped" ] || continue
+        if ! launchctl bootstrap "$domain" "$agents/${stopped##*/}"; then
+            echo "mrsk: could not restore legacy updater; plist retained at $agents/${stopped##*/}" >&2
+        fi
+    done
+}
+
+stop_legacy()
+{
+    for candidate in "$migration/candidates/"*.plist; do
+        [ -f "$candidate" ] || continue
+        candidate_id=${candidate##*/}
+        candidate_id=${candidate_id%.plist}
+        if loaded "$domain/$candidate_id"; then
+            # Prepare the rollback copy before changing the running service.
+            if ! cp "$candidate" "$migration/stopped/$candidate_id.plist"; then
+                rm -f "$migration/stopped/$candidate_id.plist"
+                restore_legacy
+                return 1
+            fi
+            if ! launchctl bootout "$domain/$candidate_id"; then
+                rm -f "$migration/stopped/$candidate_id.plist"
+                restore_legacy
+                return 1
+            fi
+        fi
+    done
+}
+
+remove_legacy_plists()
+{
+    for candidate in "$migration/candidates/"*.plist; do
+        [ -f "$candidate" ] || continue
+        rm -f "$agents/${candidate##*/}"
+    done
+}
+
+xml()
+{
+    printf '%s' "$1" | sed 's/&/\&amp;/g; s/</\&lt;/g; s/>/\&gt;/g'
+}
+
+run()
+{
+    current=$(git -C "$root" branch --show-current)
+    if [ "$current" != "$branch" ]; then
+        echo "mrsk: $root is on branch '$current', expected '$branch'" >&2
+        exit 1
+    fi
+
+    before=$(git -C "$root" rev-parse HEAD)
+    git_dir=$(git -C "$root" rev-parse --absolute-git-dir)
+    state="$git_dir/mrsk-updater-head"
+    if [ ! -e "$state" ] && [ -f "$git_dir/work-updater-head" ]; then
+        mv "$git_dir/work-updater-head" "$state"
+    fi
+    if [ -f "$state" ]; then
+        IFS= read -r baseline < "$state"
+        case "$baseline" in
+            *[!0-9a-fA-F]*|'') echo "mrsk: invalid updater state in $state" >&2; exit 1 ;;
+        esac
+        case ${#baseline} in 40|64) ;; *) echo "mrsk: invalid updater state in $state" >&2; exit 1 ;; esac
+    else
+        baseline=$before
+        printf '%s\n' "$baseline" > "$state"
+    fi
+
+    echo "Updating $root"
+    git -C "$root" pull --rebase
+    after=$(git -C "$root" rev-parse HEAD)
+    [ "$baseline" != "$after" ] || exit 0
+
+    gems=0
+    migrations=0
+    git -C "$root" diff --quiet "$baseline" "$after" -- Gemfile Gemfile.lock || {
+        status=$?
+        [ "$status" -eq 1 ] || exit "$status"
+        gems=1
+    }
+    git -C "$root" diff --quiet --diff-filter=A "$baseline" "$after" -- db/migrate || {
+        status=$?
+        [ "$status" -eq 1 ] || exit "$status"
+        migrations=1
+    }
+
+    if [ "$gems" -eq 1 ]; then
+        echo "Gemfile changed; running bundle install"
+        (cd "$root" && bundle install)
+    fi
+    if [ "$migrations" -eq 1 ]; then
+        echo "New migrations found; running bin/rails db:migrate"
+        (cd "$root" && bin/rails db:migrate)
+    fi
+    printf '%s\n' "$after" > "$state"
+}
+
+case "$action" in
+    run)
+        run
+        ;;
+    start)
+        [ "$(uname -s)" = Darwin ] || { echo "mrsk: updater lifecycle is supported only on macOS" >&2; exit 1; }
+        if loaded "$service"; then
+            prepare_migration
+            stop_legacy
+            remove_legacy_plists
+            echo "Worktree Target Branch Updater is already running"
+            exit 0
+        fi
+        helper=$(command -v worktree-target-branch-updater) || {
+            echo "mrsk: worktree-target-branch-updater is not in PATH" >&2
+            exit 1
+        }
+        helper=$(realpath "$helper")
+        case "$helper" in
+            */Contents/Resources/worktree-target-branch-updater)
+                app=${helper%/Contents/Resources/worktree-target-branch-updater}
+                ;;
+            *)
+                app="$(dirname "$helper")/dist/Worktree Target Branch Updater.app"
+                ;;
+        esac
+        executable="$app/Contents/MacOS/Worktree Target Branch Updater"
+        [ -x "$executable" ] || {
+            echo "mrsk: Worktree Target Branch Updater.app is not installed" >&2
+            exit 1
+        }
+        prepare_migration
+        executable_xml=$(xml "$executable")
+        root_xml=$(xml "$root")
+        branch_xml=$(xml "$branch")
+        home_xml=$(xml "$HOME")
+        path_xml=$(xml "$PATH")
+        log_xml=$(xml "$log")
+        error_xml=$(xml "$error_log")
+        cat > "$migration/new.plist" <<EOF
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+  <key>Label</key><string>$label</string>
+  <key>ProgramArguments</key>
+  <array>
+    <string>$executable_xml</string>
+    <string>__worktree-target-branch-updater-run</string>
+    <string>$root_xml</string>
+    <string>$branch_xml</string>
+  </array>
+  <key>EnvironmentVariables</key>
+  <dict>
+    <key>HOME</key><string>$home_xml</string>
+    <key>PATH</key><string>$path_xml</string>
+  </dict>
+  <key>ProcessType</key><string>Background</string>
+  <key>RunAtLoad</key><true/>
+  <key>StartInterval</key><integer>600</integer>
+  <key>StandardOutPath</key><string>$log_xml</string>
+  <key>StandardErrorPath</key><string>$error_xml</string>
+</dict>
+</plist>
+EOF
+        plutil -lint "$migration/new.plist" >/dev/null
+        if [ -e "$plist" ]; then
+            cp "$plist" "$migration/previous.plist"
+        fi
+        stop_legacy
+        if ! mv "$migration/new.plist" "$plist"; then
+            restore_legacy
+            exit 1
+        fi
+        if ! launchctl bootstrap "$domain" "$plist"; then
+            if [ -f "$migration/previous.plist" ]; then
+                mv "$migration/previous.plist" "$plist"
+            else
+                rm -f "$plist"
+            fi
+            restore_legacy
+            exit 1
+        fi
+        remove_legacy_plists
+        echo "Worktree Target Branch Updater started (every 10 minutes, log: $log)"
+        ;;
+    stop)
+        [ "$(uname -s)" = Darwin ] || { echo "mrsk: updater lifecycle is supported only on macOS" >&2; exit 1; }
+        prepare_migration
+        stop_legacy
+        if loaded "$service"; then
+            if ! launchctl bootout "$service"; then
+                restore_legacy
+                exit 1
+            fi
+        fi
+        rm -f "$plist"
+        remove_legacy_plists
+        echo "Worktree Target Branch Updater stopped"
+        ;;
+    status)
+        [ "$(uname -s)" = Darwin ] || { echo "mrsk: updater lifecycle is supported only on macOS" >&2; exit 1; }
+        if loaded "$service"; then
+            echo "Worktree Target Branch Updater is running"
+            exit 0
+        fi
+        for candidate in "$agents/"*.worktree-target-branch-updater.plist "$agents/"*.work.updater.plist; do
+            if legacy_owned "$candidate" && loaded "$domain/$legacy_id"; then
+                echo "Worktree Target Branch Updater is running (legacy; run start to migrate)"
+                exit 0
+            fi
+        done
+        echo "Worktree Target Branch Updater is stopped"
+        exit 1
+        ;;
+    *)
+        usage
+        ;;
+esac
