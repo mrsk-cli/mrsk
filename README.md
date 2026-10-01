@@ -12,6 +12,30 @@ echo 'eval "$(mrsk shell-init)"' >> "$HOME/.zshrc"
 Open a new zsh session after adding the shell integration. The Homebrew formula
 also installs `ocr` for `mrsk review`.
 
+## APT (Debian and Ubuntu)
+
+Debian 13 and Ubuntu 24.04 are supported on amd64 and arm64. Add the signed
+repository once:
+
+```sh
+sudo apt update
+sudo apt install ca-certificates curl
+sudo install -d -m 0755 /etc/apt/keyrings
+curl -fsSL https://mrsk-cli.github.io/mrsk/apt/mrsk.gpg | sudo tee /etc/apt/keyrings/mrsk.gpg > /dev/null
+sudo chmod 0644 /etc/apt/keyrings/mrsk.gpg
+curl -fsSL https://mrsk-cli.github.io/mrsk/apt/mrsk.sources | sudo tee /etc/apt/sources.list.d/mrsk.sources > /dev/null
+sudo apt update
+sudo apt install mrsk
+```
+
+The repository key is trusted only for this repository through `Signed-By`.
+Future versions arrive through `sudo apt update && sudo apt upgrade`.
+The package includes a private copy of `ocr` for `mrsk review`.
+
+For zsh worktree navigation, add `eval "$(mrsk shell-init)"` to `~/.zshrc` and
+open a new shell. The macOS-only `open` and `updater` commands remain unavailable
+on Linux.
+
 ## Build and install
 
 ```sh
