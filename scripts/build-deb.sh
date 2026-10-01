@@ -35,10 +35,12 @@ Priority: optional
 Architecture: $architecture
 Maintainer: Anton Ivanov <anton.i@hey.com>
 Depends: $dependencies, git (>= 2.41), ruby, zsh, ca-certificates
-Suggests: vim, postgresql-client, xdg-utils
+Recommends: vim
+Suggests: postgresql-client, xdg-utils
 Installed-Size: $(du -sk "$package/usr" | cut -f1)
 Homepage: https://github.com/mrsk-cli/mrsk
 Description: Manage Git worktrees beside a configured main checkout
  Includes a private copy of open-code-review for the mrsk review command.
 EOF
+(cd "$package" && find usr -type f -print0 | sort -z | xargs -0 md5sum > DEBIAN/md5sums)
 dpkg-deb --root-owner-group --build "$package" "dist/deb/mrsk_${version}_${architecture}.deb"
