@@ -2,6 +2,16 @@
 
 Small POSIX C CLI for managing Git worktrees beside a configured main checkout.
 
+## Homebrew
+
+```sh
+brew install mrsk-cli/tap/mrsk
+echo 'eval "$(mrsk shell-init)"' >> "$HOME/.zshrc"
+```
+
+Open a new zsh session after adding the shell integration. The Homebrew formula
+also installs `ocr` for `mrsk review`.
+
 ## Build and install
 
 ```sh
