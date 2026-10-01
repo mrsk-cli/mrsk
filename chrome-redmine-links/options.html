@@ -1,0 +1,43 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Orient Redmine Links</title>
+    <style>
+      body { color: #1f2328; font: 14px system-ui, sans-serif; margin: 40px auto; max-width: 560px; padding: 0 20px; }
+      form { display: grid; gap: 20px; }
+      fieldset { border: 0; display: grid; gap: 10px; margin: 0; padding: 0; }
+      label { display: grid; gap: 6px; }
+      fieldset label { display: block; }
+      input[type="text"], input[type="url"] { box-sizing: border-box; font: inherit; padding: 8px; width: 100%; }
+      button { font: inherit; justify-self: start; padding: 8px 16px; }
+      [hidden] { display: none; }
+      [role="status"] { min-height: 20px; }
+    </style>
+  </head>
+  <body>
+    <h1>Orient Redmine Links</h1>
+    <form data-options-form>
+      <label>
+        Redmine issues base URL
+        <input name="redmineBaseUrl" type="url" pattern="https?://.+" value="https://redmine.matecube-internal.ddns.net/issues/" required>
+      </label>
+
+      <fieldset>
+        <legend>Run on</legend>
+        <label><input name="githubScope" type="radio" value="organization" checked> A specific GitHub organization</label>
+        <label><input name="githubScope" type="radio" value="all"> All GitHub organizations</label>
+      </fieldset>
+
+      <label data-organization-field>
+        GitHub organization
+        <input name="githubOrganization" type="text" value="matecube" data-github-organization required>
+      </label>
+
+      <button type="submit">Save</button>
+      <output role="status" data-status></output>
+    </form>
+    <script src="options.js"></script>
+  </body>
+</html>

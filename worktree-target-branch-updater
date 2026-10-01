@@ -1,0 +1,194 @@
+#!/bin/sh
+set -eu
+
+usage()
+{
+    echo "Usage: worktree-target-branch-updater <start|stop|status|run> <project-root> <main-branch>" >&2
+    exit 2
+}
+
+[ "$#" -eq 3 ] || usage
+
+if [ "$(uname -s)" != Darwin ]; then
+    echo "worktree-target-branch-updater: supported on macOS only" >&2
+    exit 1
+fi
+
+action=$1
+root=$2
+branch=$3
+# ponytail: one updater per user; add project-specific labels when parallel
+# project updaters are actually needed.
+label=dev.matecube.worktree-target-branch-updater
+legacy_label=dev.matecube.work.updater
+plist="$HOME/Library/LaunchAgents/$label.plist"
+legacy_plist="$HOME/Library/LaunchAgents/$legacy_label.plist"
+log="$HOME/.mrsk/updater.log"
+error_log="$HOME/.mrsk/updater.error.log"
+domain="gui/$(id -u)"
+service="$domain/$label"
+legacy_service="$domain/$legacy_label"
+
+loaded()
+{
+    launchctl print "$service" >/dev/null 2>&1
+}
+
+migrate_legacy()
+{
+    if launchctl print "$legacy_service" >/dev/null 2>&1; then
+        launchctl bootout "$legacy_service"
+    fi
+    rm -f "$legacy_plist"
+}
+
+xml()
+{
+    printf '%s' "$1" | sed 's/&/\&amp;/g; s/</\&lt;/g; s/>/\&gt;/g'
+}
+
+run()
+{
+    current=$(git -C "$root" branch --show-current)
+    if [ "$current" != "$branch" ]; then
+        echo "mrsk: $root is on branch '$current', expected '$branch'" >&2
+        exit 1
+    fi
+
+    before=$(git -C "$root" rev-parse HEAD)
+    git_dir=$(git -C "$root" rev-parse --absolute-git-dir)
+    state="$git_dir/mrsk-updater-head"
+    if [ ! -e "$state" ] && [ -f "$git_dir/work-updater-head" ]; then
+        mv "$git_dir/work-updater-head" "$state"
+    fi
+    if [ -f "$state" ]; then
+        IFS= read -r baseline < "$state"
+        case "$baseline" in
+            *[!0-9a-fA-F]*|'') echo "mrsk: invalid updater state in $state" >&2; exit 1 ;;
+        esac
+        case ${#baseline} in 40|64) ;; *) echo "mrsk: invalid updater state in $state" >&2; exit 1 ;; esac
+    else
+        baseline=$before
+        printf '%s\n' "$baseline" > "$state"
+    fi
+
+    echo "Updating $root"
+    git -C "$root" pull --rebase
+    after=$(git -C "$root" rev-parse HEAD)
+    [ "$baseline" != "$after" ] || exit 0
+
+    gems=0
+    migrations=0
+    git -C "$root" diff --quiet "$baseline" "$after" -- Gemfile Gemfile.lock || {
+        status=$?
+        [ "$status" -eq 1 ] || exit "$status"
+        gems=1
+    }
+    git -C "$root" diff --quiet --diff-filter=A "$baseline" "$after" -- db/migrate || {
+        status=$?
+        [ "$status" -eq 1 ] || exit "$status"
+        migrations=1
+    }
+
+    if [ "$gems" -eq 1 ]; then
+        echo "Gemfile changed; running bundle install"
+        (cd "$root" && bundle install)
+    fi
+    if [ "$migrations" -eq 1 ]; then
+        echo "New migrations found; running bin/rails db:migrate"
+        (cd "$root" && bin/rails db:migrate)
+    fi
+    printf '%s\n' "$after" > "$state"
+}
+
+case "$action" in
+    run)
+        run
+        ;;
+    start)
+        [ "$(uname -s)" = Darwin ] || { echo "mrsk: updater lifecycle is supported only on macOS" >&2; exit 1; }
+        if loaded; then
+            echo "Worktree Target Branch Updater is already running"
+            exit 0
+        fi
+        migrate_legacy
+        helper=$(command -v worktree-target-branch-updater) || {
+            echo "mrsk: worktree-target-branch-updater is not in PATH" >&2
+            exit 1
+        }
+        helper=$(realpath "$helper")
+        case "$helper" in
+            */Contents/Resources/worktree-target-branch-updater)
+                app=${helper%/Contents/Resources/worktree-target-branch-updater}
+                ;;
+            *)
+                app="$(dirname "$helper")/dist/Worktree Target Branch Updater.app"
+                ;;
+        esac
+        executable="$app/Contents/MacOS/Worktree Target Branch Updater"
+        [ -x "$executable" ] || {
+            echo "mrsk: Worktree Target Branch Updater.app is not installed" >&2
+            exit 1
+        }
+        mkdir -p "$HOME/Library/LaunchAgents" "$HOME/.mrsk"
+        executable_xml=$(xml "$executable")
+        root_xml=$(xml "$root")
+        branch_xml=$(xml "$branch")
+        home_xml=$(xml "$HOME")
+        path_xml=$(xml "$PATH")
+        log_xml=$(xml "$log")
+        error_xml=$(xml "$error_log")
+        cat > "$plist" <<EOF
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+  <key>Label</key><string>$label</string>
+  <key>ProgramArguments</key>
+  <array>
+    <string>$executable_xml</string>
+    <string>__worktree-target-branch-updater-run</string>
+    <string>$root_xml</string>
+    <string>$branch_xml</string>
+  </array>
+  <key>EnvironmentVariables</key>
+  <dict>
+    <key>HOME</key><string>$home_xml</string>
+    <key>PATH</key><string>$path_xml</string>
+  </dict>
+  <key>ProcessType</key><string>Background</string>
+  <key>RunAtLoad</key><true/>
+  <key>StartInterval</key><integer>600</integer>
+  <key>StandardOutPath</key><string>$log_xml</string>
+  <key>StandardErrorPath</key><string>$error_xml</string>
+</dict>
+</plist>
+EOF
+        if ! launchctl bootstrap "$domain" "$plist"; then
+            rm -f "$plist"
+            exit 1
+        fi
+        echo "Worktree Target Branch Updater started (every 10 minutes, log: $log)"
+        ;;
+    stop)
+        [ "$(uname -s)" = Darwin ] || { echo "mrsk: updater lifecycle is supported only on macOS" >&2; exit 1; }
+        if loaded; then
+            launchctl bootout "$service"
+        fi
+        rm -f "$plist"
+        migrate_legacy
+        echo "Worktree Target Branch Updater stopped"
+        ;;
+    status)
+        [ "$(uname -s)" = Darwin ] || { echo "mrsk: updater lifecycle is supported only on macOS" >&2; exit 1; }
+        if loaded; then
+            echo "Worktree Target Branch Updater is running"
+        else
+            echo "Worktree Target Branch Updater is stopped"
+            exit 1
+        fi
+        ;;
+    *)
+        usage
+        ;;
+esac

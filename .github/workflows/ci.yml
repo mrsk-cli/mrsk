@@ -1,0 +1,78 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+    paths-ignore:
+      - '**.md'
+      - '**/LICENSE'
+      - '**/.gitignore'
+  pull_request:
+    branches: [main]
+    paths-ignore:
+      - '**.md'
+      - '**/LICENSE'
+      - '**/.gitignore'
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  test:
+    name: ${{ matrix.name }}
+    runs-on: ${{ matrix.os }}
+    container: ${{ matrix.container }}
+    timeout-minutes: 20
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - name: macOS
+            os: macos-latest
+          - name: Ubuntu
+            os: ubuntu-latest
+          - name: Debian 13
+            os: ubuntu-latest
+            container: debian:trixie
+    steps:
+      - name: Install Debian packages
+        if: matrix.container
+        run: apt-get update -qq && apt-get install -y -qq git make gcc golang-go nodejs zsh ruby ca-certificates
+
+      - name: Install Ubuntu packages
+        if: runner.os == 'Linux' && !matrix.container
+        run: sudo apt-get update -qq && sudo apt-get install -y -qq zsh ruby
+
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        if: ${{ !matrix.container }}
+        with:
+          go-version-file: third_party/open-code-review/go.mod
+          cache-dependency-path: third_party/open-code-review/go.sum
+
+      - name: Trust workspace
+        if: matrix.container
+        run: git config --global --add safe.directory "$GITHUB_WORKSPACE"
+
+      - name: Build
+        run: make mrsk dist/ocr
+
+      - name: Create unprivileged user
+        if: matrix.container
+        run: useradd -m ci
+
+      - name: Test
+        env:
+          AS_USER: ${{ matrix.container && 'runuser -u ci --' || '' }}
+        run: $AS_USER make test
+
+      - name: Test Chrome extension
+        run: make chrome-extension-build
+
+      - name: Test install
+        run: make install PREFIX="$PWD/prefix" && prefix/bin/mrsk --help

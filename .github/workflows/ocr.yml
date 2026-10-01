@@ -1,0 +1,43 @@
+name: ocr
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'third_party/open-code-review/**'
+      - 'Makefile'
+      - 'tests/review_e2e.sh'
+      - '.github/workflows/ocr.yml'
+  pull_request:
+    branches: [main]
+    paths:
+      - 'third_party/open-code-review/**'
+      - 'Makefile'
+      - 'tests/review_e2e.sh'
+      - '.github/workflows/ocr.yml'
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version-file: third_party/open-code-review/go.mod
+          cache-dependency-path: third_party/open-code-review/go.sum
+
+      - name: Cross-compile for macOS
+        env:
+          GOOS: darwin
+          GOARCH: arm64
+          CGO_ENABLED: '0'
+        run: go -C third_party/open-code-review build -o /dev/null ./cmd/opencodereview
