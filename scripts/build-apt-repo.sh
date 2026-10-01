@@ -5,6 +5,10 @@ set -eu
 output=${1:?Usage: build-apt-repo.sh OUTPUT PACKAGE.deb...}
 shift
 test "$#" -gt 0
+if [ -e "$output" ]; then
+    printf 'Output already exists: %s\n' "$output" >&2
+    exit 1
+fi
 mkdir -p "$output/pool/main/m/mrsk"
 architectures=""
 version=""

@@ -32,6 +32,13 @@ The repository key is trusted only for this repository through `Signed-By`.
 Future versions arrive through `sudo apt update && sudo apt upgrade`.
 The package includes a private copy of `ocr` for `mrsk review`.
 
+Configure its LLM provider and model with:
+
+```sh
+/usr/lib/mrsk/ocr config provider
+/usr/lib/mrsk/ocr config model
+```
+
 For zsh worktree navigation, add `eval "$(mrsk shell-init)"` to `~/.zshrc` and
 open a new shell. The macOS-only `open` and `updater` commands remain unavailable
 on Linux.
