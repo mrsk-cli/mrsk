@@ -1,0 +1,114 @@
+name: APT
+
+on:
+  push:
+    branches: [main]
+    tags: ['v*']
+  pull_request:
+    branches: [main]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: apt-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  build:
+    name: Package ${{ matrix.architecture }}
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 20
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - architecture: amd64
+            runner: ubuntu-24.04
+          - architecture: arm64
+            runner: ubuntu-24.04-arm
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e
+        with:
+          go-version: stable
+          cache-dependency-path: third_party/open-code-review/go.sum
+      - run: sudo apt-get update -qq && sudo apt-get install -y -qq dpkg-dev apt-utils
+      - name: Build package
+        run: |
+          version=0.0.0
+          if [[ "$GITHUB_REF" == refs/tags/v* ]]; then version=${GITHUB_REF_NAME#v}; fi
+          echo "VERSION=$version" >> "$GITHUB_ENV"
+          scripts/build-deb.sh "$version"
+      - name: Test signed APT installation
+        run: |
+          export GNUPGHOME=$(mktemp -d)
+          trap 'gpgconf --kill gpg-agent; rm -rf "$GNUPGHOME"' EXIT
+          gpg --batch --pinentry-mode loopback --passphrase '' --quick-generate-key 'APT test' rsa2048 sign 1d
+          export APT_SIGNING_KEY_ID=$(gpg --with-colons --list-secret-keys | awk -F: '$1 == "fpr" { print $10; exit }')
+          scripts/build-apt-repo.sh dist/test-apt dist/deb/*.deb
+          for image in ubuntu:24.04 debian:trixie; do
+            docker run --rm -v "$PWD/dist/test-apt:/repo:ro" -v "$PWD/tests:/tests:ro" \
+              "$image" sh /tests/apt-install.sh file:/repo "$VERSION"
+          done
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+        with:
+          name: mrsk-deb-${{ matrix.architecture }}
+          path: dist/deb/*.deb
+          if-no-files-found: error
+
+  publish:
+    # Updating an existing tag must not replace releases or redeploy the APT repository.
+    if: github.event_name == 'push' && startsWith(github.ref, 'refs/tags/v') && github.event.created == true && github.event.forced == false
+    needs: build
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    concurrency:
+      group: apt-publish
+      cancel-in-progress: false
+    permissions:
+      contents: write
+      pages: write
+      id-token: write
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c
+        with:
+          pattern: mrsk-deb-*
+          path: dist/deb
+          merge-multiple: true
+      - run: sudo apt-get update -qq && sudo apt-get install -y -qq dpkg-dev apt-utils
+      - name: Sign repository
+        env:
+          APT_SIGNING_KEY: ${{ secrets.APT_SIGNING_KEY }}
+        run: |
+          export GNUPGHOME=$(mktemp -d)
+          trap 'gpgconf --kill gpg-agent; rm -rf "$GNUPGHOME"' EXIT
+          printf '%s' "$APT_SIGNING_KEY" | gpg --batch --import
+          export APT_SIGNING_KEY_ID=$(gpg --show-keys --with-colons packaging/apt/mrsk.gpg | awk -F: '$1 == "fpr" { print $10; exit }')
+          scripts/build-apt-repo.sh dist/site/apt dist/deb/*.deb
+          gpgv --keyring "$PWD/packaging/apt/mrsk.gpg" dist/site/apt/dists/stable/InRelease
+      - name: Publish release packages
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release view "$GITHUB_REF_NAME" >/dev/null 2>&1 || \
+            gh release create "$GITHUB_REF_NAME" --verify-tag --title "mrsk $GITHUB_REF_NAME" --generate-notes
+          existing=$(mktemp -d)
+          trap 'rm -rf "$existing"' EXIT
+          for package in dist/deb/*.deb; do
+            if gh release download "$GITHUB_REF_NAME" --pattern "$(basename "$package")" --dir "$existing" 2>/dev/null; then
+              cmp "$package" "$existing/$(basename "$package")"
+            else
+              gh release upload "$GITHUB_REF_NAME" "$package"
+            fi
+          done
+      - uses: actions/configure-pages@45bfe0192ca1faeb007ade9deae92b16b8254a0d
+      - uses: actions/upload-pages-artifact@fc324d3547104276b827a68afc52ff2a11cc49c9
+        with:
+          path: dist/site
+      - uses: actions/deploy-pages@368f82528645a54fb793d4d04e342629a3f51346
+        id: deployment

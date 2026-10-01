@@ -1,0 +1,2 @@
+#!/bin/sh
+PATH="/usr/lib/mrsk:$PATH" exec /usr/lib/mrsk/mrsk "$@"
