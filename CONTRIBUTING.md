@@ -67,7 +67,7 @@ and the [APT workflow](.github/workflows/apt.yml).
 - Add or update a test when command behavior changes
 - Update the README when commands, config, or requirements change
 - Do not edit the vendored review code for an unrelated fix; its update process
-  is described in the [README](README.md#commands)
+  is described in the [vendored review update guide](README.md#updating-the-vendored-review-tool)
 
 Before opening a pull request, inspect your diff and run:
 
