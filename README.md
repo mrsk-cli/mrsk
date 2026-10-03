@@ -1,18 +1,55 @@
 # mrsk
 
-Small POSIX C CLI for managing Git worktrees beside a configured main checkout.
+Work on more than one Git branch without leaving your current work behind.
+`mrsk` creates and manages worktrees beside your main checkout, with short
+commands for common tasks.
 
-## Homebrew
+- Keep each task in its own directory, without a second clone
+- Copy selected local files, such as `.env`, into new worktrees
+- Jump to numbered task branches with an optional zsh shortcut
+- Add a separate PostgreSQL database for Rails work, or run an AI code review,
+  when you need those features
+
+The core CLI is written in POSIX C and runs on macOS and Linux.
+
+[Install](#install) · [First worktree](#first-worktree) ·
+[Configuration](#configuration) · [Commands](#commands) ·
+[Contribute](CONTRIBUTING.md)
+
+## Requirements
+
+| Use | What you need |
+| --- | --- |
+| Create, list, and remove worktrees | macOS or Linux, and Git 2.36 or newer |
+| Change directory with `mrsk 2491` | zsh and the shell integration below; explicit commands work without it |
+| AI review | `ocr`, Git 2.41 or newer, and an LLM provider and model configured for a full review |
+| Build from source | Make, a C11 compiler, and Go 1.25.5 or newer for the bundled `ocr` |
+| Run the test suite | Build tools above, zsh, and Ruby; run as a regular user |
+| Extra commands | Vim for `configure`; Ruby for Rails migration helpers; `psql` for database features; `xdg-open` for `redmine` on Linux |
+| macOS-only commands | `open` uses Terminal; `updater` uses launchd and may run Bundler and Rails |
+
+Homebrew and APT install the review helper too. APT requires Git 2.41 or newer
+for the package as a whole. Rails, PostgreSQL, and an LLM account are not needed
+for the first-worktree guide.
+
+## Install
+
+Choose one method, then continue to [First worktree](#first-worktree).
+
+### Homebrew
 
 ```sh
 brew install mrsk-cli/tap/mrsk
-echo 'eval "$(mrsk shell-init)"' >> "$HOME/.zshrc"
 ```
 
-Open a new zsh session after adding the shell integration. The Homebrew formula
-also installs `ocr` for `mrsk review`.
+The Homebrew formula also installs `ocr` for `mrsk review`. For the optional
+zsh shortcut, add the hook once and open a new zsh session:
 
-## APT (Debian and Ubuntu)
+```sh
+echo 'eval "$(command mrsk shell-init)"' >> "$HOME/.zshrc"
+```
+
+### APT (Debian and Ubuntu)
 
 Debian 13 and Ubuntu 24.04 are supported on amd64 and arm64. Add the signed
 repository once:
@@ -43,22 +80,36 @@ For zsh worktree navigation, add `eval "$(mrsk shell-init)"` to `~/.zshrc` and
 open a new shell. The macOS-only `open` and `updater` commands remain unavailable
 on Linux.
 
-## Build and install
+### Build from source
 
 ```sh
+git clone https://github.com/mrsk-cli/mrsk.git
+cd mrsk
 make
 make test
 make install PREFIX="$HOME/.local"
-echo 'eval "$(command mrsk shell-init)"' >> "$HOME/.zshrc"
+export PATH="$HOME/.local/bin:$PATH"
 ```
 
-Ensure `$HOME/.local/bin` is in `PATH` when using that install prefix.
+Keep `$HOME/.local/bin` in your shell's `PATH` when using that install prefix.
+Run the build, tests, and install as a regular user, not root: permission tests
+can fail under root. See [CONTRIBUTING.md](CONTRIBUTING.md) for test details.
 
-Building also compiles the vendored open-code-review sources, so it needs Go
-1.21 or newer; an older Go than 1.25 fetches the 1.25 toolchain by itself.
-`make install` puts the resulting `ocr` binary next to `mrsk`.
+`make` and `make install` also build the vendored open-code-review sources.
+Their [Go module](third_party/open-code-review/go.mod) requires Go 1.25.5.
+Go 1.21 or newer can download the required toolchain when automatic toolchain
+selection is enabled. Allow network access for toolchain and module downloads,
+or provide them in advance. `make install` puts `ocr` next to `mrsk`.
+On macOS, installation also builds and signs the updater app with `codesign`.
 
-### Debian 13
+For the optional zsh shortcut, add this line to `~/.zshrc` once and open a new
+zsh session:
+
+```sh
+eval "$(command mrsk shell-init)"
+```
+
+#### Debian 13 source build
 
 Install the build tools and the programs `mrsk` runs:
 
@@ -70,23 +121,24 @@ sudo apt install vim postgresql-client xdg-utils
 The second line is optional: `configure` opens Vim, the database commands run
 `psql`, and `redmine` opens the browser through `xdg-open`.
 
-Build, test and install as a regular user, not root. Set `REPOSITORY_URL`
-to the new repository URL first:
+Build, test and install as a regular user, not root:
 
 ```sh
-git clone "$REPOSITORY_URL" mrsk
+git clone https://github.com/mrsk-cli/mrsk.git
 cd mrsk
 make
 make test
 make install PREFIX="$HOME/.local"
 ```
 
-Debian 13 ships Go 1.24, so the first `make` downloads the Go 1.25 toolchain
-and needs network access. `make test` fails under root, because root ignores
-the file permissions some tests rely on.
+Debian 13 ships Go 1.24, so with automatic toolchain selection enabled the
+first `make` downloads the required Go 1.25.5 toolchain and needs network access.
+`make test` fails under root, because root ignores the file permissions some
+tests rely on.
 
-The shell integration is written for zsh, while Debian logs in with bash by
-default. Switch the login shell, log in again, then add `mrsk` to zsh:
+The shell integration is written for zsh. If you use bash, the explicit
+`new`, `list`, and `remove` commands still work. To use zsh as your login shell,
+switch it, log in again, then add `mrsk` to zsh:
 
 ```sh
 chsh -s "$(command -v zsh)"
@@ -97,14 +149,76 @@ echo 'eval "$(command mrsk shell-init)"' >> "$HOME/.zshrc"
 `mrsk open` (Terminal) and `mrsk updater` (launchd) need macOS and exit with an
 error on Debian.
 
+## First worktree
+
+Start with an existing local Git checkout that has at least one commit.
+Choose a main checkout and note its absolute path and base branch, for example
+`/home/you/projects/example/main` and `main`. On macOS, use your actual path
+under `/Users/you` instead. The folder does not have to be named `main`.
+
+Create the configuration directory:
+
+```sh
+install -d -m 700 "$HOME/.mrsk"
+```
+
+With your editor, create `~/.mrsk/config.yml` with the following content.
+Replace `project_root` with the absolute checkout path and `main_branch` with
+an existing local branch. Do not use `~` or `$HOME` inside the YAML path.
+If you already have a config, add a project to its `projects` list instead of
+replacing the file; each project name must be unique.
+
+```yaml
+projects:
+  - project_name: example
+    project_root: /home/you/projects/example/main
+    main_branch: main
+```
+
+Use a new branch name and a sibling directory that do not already exist:
+
+```sh
+mrsk example new first-task
+mrsk example list
+cd /home/you/projects/example/first-task
+```
+
+Adjust the `cd` path to match your checkout. `new` creates `first-task` from
+`main_branch` in a sibling directory; it does not change your current shell's
+directory. `list` shows the registered worktrees. No shell hook, database, or
+review setup is needed for these commands.
+
+When you no longer need this worktree, first save your work and return to the
+main checkout:
+
+```sh
+cd /home/you/projects/example/main
+mrsk example remove first-task
+mrsk example list
+```
+
+`remove` deletes the worktree directory but keeps the branch and its commits.
+It refuses a dirty worktree. Do not add `--force` just to get past that check:
+review and save any local changes first. For this guide, leave the optional
+`copy_files`, `copy_folders`, and database settings out.
+
 ## Configuration
 
-Create `~/.mrsk/config.yml`. When upgrading, copy the existing configuration:
+The config lives at `~/.mrsk/config.yml`. Start with the minimal example above,
+or use `mrsk configure` to open the file in Vim.
+
+### Upgrading from `work`
+
+Only use this step if you have the old `~/.work/config.yml`. Back up any
+existing `~/.mrsk/config.yml` first; the copy below overwrites it. New users
+should use [First worktree](#first-worktree) instead.
 
 ```sh
 install -d -m 700 "$HOME/.mrsk"
 install -m 600 "$HOME/.work/config.yml" "$HOME/.mrsk/config.yml"
 ```
+
+### Optional settings and multiple projects
 
 Example configuration:
 
@@ -112,7 +226,7 @@ Example configuration:
 redmine_url: https://redmine.example.com
 projects:
   - project_name: example_project
-    project_root: /Users/user/projects/example_project/main
+    project_root: /home/you/projects/example_project/main
     main_branch: main
     default: true
     prefix: DEV
@@ -122,7 +236,7 @@ projects:
     copy_folders:
       - storage
   - project_name: another_project
-    project_root: /Users/anton.i/projects/another_project/main
+    project_root: /home/you/projects/another_project/main
     main_branch: main
 ```
 
