@@ -1,5 +1,9 @@
 # mrsk
 
+[![CI](https://github.com/mrsk-cli/mrsk/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/mrsk-cli/mrsk/actions/workflows/ci.yml)
+[![Latest release](https://img.shields.io/github/v/release/mrsk-cli/mrsk)](https://github.com/mrsk-cli/mrsk/releases/latest)
+[![License](https://img.shields.io/github/license/mrsk-cli/mrsk)](LICENSE)
+
 Work on more than one Git branch without leaving your current work behind.
 `mrsk` creates and manages worktrees beside your main checkout, with short
 commands for common tasks.
@@ -14,7 +18,8 @@ The core CLI is written in POSIX C and runs on macOS and Linux.
 
 [Install](#install) · [First worktree](#first-worktree) ·
 [Configuration](#configuration) · [Commands](#commands) ·
-[Contribute](CONTRIBUTING.md)
+[Chrome extension](chrome-redmine-links/README.md) · [Packaging](packaging/README.md) ·
+[Contribute](CONTRIBUTING.md) · [Licenses](#licenses)
 
 ## Requirements
 
@@ -258,39 +263,26 @@ remains valid for a single project.
 
 ## Commands
 
-```sh
-mrsk configure
-mrsk clone https://github.com/basecamp/fizzy
-mrsk clone git@github.com:basecamp/fizzy.git
-mrsk redmine
-mrsk review
-mrsk review --from main --to feature-auth
-mrsk review --commit abc123
-mrsk rails-schema-confl
-mrsk bump-migration-version
-mrsk dbst
-mrsk dbst --full
-mrsk 2491
-mrsk DEV-2491
-mrsk 2491 -d
-mrsk DEV-2491 -d
-mrsk new 2491
-mrsk new -d 2491
-mrsk new DEV-000
-mrsk example_project new ORI-1234
-mrsk example_project new feature/login
-mrsk example_project open feature/login
-mrsk example_project list
-mrsk example_project remove ORI-1234
-mrsk example_project remove feature/login
-mrsk example_project remove --force ORI-1234
-mrsk example_project delete_all
-mrsk example_project delete_all --force
-mrsk example_project updater start
-mrsk example_project updater status
-mrsk example_project updater stop
-mrsk example_project updater run
-```
+| Command | Purpose |
+| --- | --- |
+| `mrsk configure` | Edit the configuration in Vim |
+| `mrsk clone https://github.com/basecamp/fizzy` | Clone a GitHub repository and register the project; SSH URLs work too |
+| `mrsk [project] new [-d] <branch>` | Create a sibling worktree; optionally copy the development database |
+| `mrsk [project] list` | List registered worktrees and database/migration state |
+| `mrsk [project] remove [--force] <branch>` | Remove one worktree, keeping its branch |
+| `mrsk [project] delete_all [--force]` | Remove other worktrees **and their local branches**; see [deletion details](#worktrees) |
+| `mrsk 2491` or `mrsk DEV-2491` | Create or enter a task worktree with the [zsh hook](#shell-shortcuts); accepts `-d` |
+| `mrsk review [options]` | Review changes, a branch range, or a commit with [open-code-review](#ai-review) |
+| `mrsk rails-schema-confl` | Resolve a standard Rails schema version conflict |
+| `mrsk bump-migration-version` | Re-timestamp migrations added by the branch |
+| `mrsk dbst [--full]` | Show migration status; the default is the last 20 migrations |
+| `mrsk redmine` | Open the current branch's issue in the browser |
+| `mrsk [project] open <branch>` | Open the worktree in macOS Terminal |
+| `mrsk [project] updater <action>` | Manage the [macOS updater](#macos-updater) |
+
+`[project]` and bracketed options are optional; replace angle-bracketed values
+with your own. Updater actions are `start`, `status`, `stop`, and `run`. Database copies and their
+removal are described under [Rails and database tools](#rails-and-database-tools).
 
 The project name may be omitted when only one project is configured, when the
 current directory matches a project's worktree directory, or when a default is
@@ -298,30 +290,11 @@ configured.
 
 `configure` opens `~/.mrsk/config.yml` in Vim, creating `~/.mrsk` when needed.
 
-`redmine` opens `<redmine_url>/issues/<number>` in the default browser, using
-the issue number at the end of the current branch name. For example, branch
-`DEV-3454` opens `https://redmine.example.com/issues/3454`. When `redmine_url`
-has no scheme, `https://` is used.
-
-`review` runs an AI code review of the current repository with
-[open-code-review](https://github.com/alibaba/open-code-review), whose source
-is vendored in `third_party/open-code-review`. Without options it reviews the
-staged, unstaged, and untracked changes; `--from main --to feature-auth`
-reviews what `feature-auth` changed since it diverged from `main`; and
-`--commit abc123` reviews one commit against its parent. Every argument is
-passed unchanged to `ocr review`, so its other options work too, for example
-`--preview`, `--format json --output result.json`, or `--resume <session-id>`.
-Configure an LLM once with `ocr config provider` and `ocr config model`.
-open-code-review needs Git 2.41 or newer.
-
-The vendored release is recorded in `third_party/open-code-review/VERSION`.
-To move to another one, run `third_party/update-open-code-review.sh <tag>`. It
-replaces the vendored copy with that release's Go sources (tests excluded) and
-checks that they build.
+### Worktrees
 
 `clone` accepts one GitHub HTTPS or SSH repository URL. A `.git` suffix is
 optional, and HTTPS URLs may have a trailing slash. Both forms are normalized
-to SSH, so the examples above use `git@github.com:basecamp/fizzy.git` for Git
+to SSH, so both URL forms use `git@github.com:basecamp/fizzy.git` for Git
 operations. Before creating files, `git ls-remote --symref` discovers and
 validates the remote default branch instead of assuming `main` or `master`.
 The repository is then cloned to the absolute path `<current-directory>/fizzy/main`
@@ -345,37 +318,49 @@ projects:
 
 The generated entry does not set `default: true`.
 
-`rails-schema-confl` resolves a standard `db/schema.rb` version conflict using
-the newest timestamp from `db/migrate`. Run it from the Rails project root.
-
-`bump-migration-version` re-timestamps the migrations this branch added so they
-sort after everything already in `db/migrate`. Run it from a worktree root after
-rebasing on `main_branch`. Migrations added since the merge base with
-`main_branch` (committed, staged, or untracked) are renamed to consecutive
-seconds starting at the current UTC time, or at one second past the newest
-foreign migration when that is later, keeping their relative order. Tracked
-files move with `git mv`, so the rename is staged. When the worktree `.env`
-defines `DATABASE_URL`, matching `schema_migrations` rows are updated through
-`psql` in one transaction before the files move, so an applied migration is not
-re-run; a failing `psql` only prints a yellow warning. Nothing is renamed when a
-target file already exists.
-
-`dbst` is a fast `bin/rails db:migrate:status`. It prints the last 20
-migrations (all of them with `--full`) with their up/down state, ID, name, and
-the committer: the part before `@` in the email of whoever added the migration
-file in git. The state comes from `schema_migrations` through `psql`, using the
-same database lookup as `new -d` (see below) in the Rails root of the checkout
-you are in; outside `project_root` and its worktrees it exits with an error.
-Versions applied in the database without a file show as
-`********** NO FILE **********`, like Rails. When `db/schema.rb` writes its
-version with underscores (`2026_09_29_125131`), IDs are shown the same way.
-When the current branch has an upstream (`git branch --set-upstream-to=ups/rebuild`),
-IDs of migrations whose files are not on that upstream yet are shown in yellow.
-
 `new` creates a sibling directory of `project_root`. Slashes in a branch name
 become dashes in the directory name, so `feature/login` uses
 `example_project/feature-login`. An existing local branch is checked out;
 otherwise it is created from `main_branch`.
+
+`remove` calls `git worktree remove`, which removes the registered worktree and
+its directory but keeps the Git branch. It refuses dirty worktrees unless
+`--force` is explicitly supplied.
+
+`delete_all` preserves the configured main checkout and removes every other
+registered worktree and its checked-out local branch. It also refuses dirty
+worktrees unless `--force` is explicitly supplied. Set
+`GIT_PROTECTED_BRANCHES` to comma- or whitespace-separated branch names whose
+worktrees and local branches must be preserved.
+
+### Shell shortcuts
+
+With the Zsh hook installed, `mrsk 2491` or `mrsk DEV-2491` creates `DEV-2491`
+when needed and changes the current shell to that worktree. The shortcut also
+accepts `-d`/`--database`: a new worktree is created with its own database, and
+an existing worktree without one gets its own database copy on the spot.
+
+### AI review
+
+`review` runs an AI code review of the current repository with
+[open-code-review](https://github.com/alibaba/open-code-review), whose source
+is vendored in `third_party/open-code-review`. Without options it reviews the
+staged, unstaged, and untracked changes; `--from main --to feature-auth`
+reviews what `feature-auth` changed since it diverged from `main`; and
+`--commit abc123` reviews one commit against its parent. Every argument is
+passed unchanged to `ocr review`, so its other options work too, for example
+`--preview`, `--format json --output result.json`, or `--resume <session-id>`.
+Configure an LLM once with `ocr config provider` and `ocr config model`.
+open-code-review needs Git 2.41 or newer.
+
+#### Updating the vendored review tool
+
+The vendored release is recorded in `third_party/open-code-review/VERSION`.
+To move to another one, run `third_party/update-open-code-review.sh <tag>`. It
+replaces the vendored copy with that release's Go sources (tests excluded) and
+checks that they build.
+
+### Rails and database tools
 
 `new -d` (or `--database`) additionally gives the worktree an isolated copy of
 the development database. It takes the source database from the
@@ -399,22 +384,43 @@ shell can enter the worktree immediately. Output goes to
 This only happens for worktrees created with their own database; a worktree on
 the shared database is never migrated automatically.
 
-With the Zsh hook installed, `mrsk 2491` or `mrsk DEV-2491` creates `DEV-2491`
-when needed and changes the current shell to that worktree. The shortcut also
-accepts `-d`/`--database`: a new worktree is created with its own database, and
-an existing worktree without one gets its own database copy on the spot.
+`rails-schema-confl` resolves a standard `db/schema.rb` version conflict using
+the newest timestamp from `db/migrate`. Run it from the Rails project root.
+
+`bump-migration-version` re-timestamps the migrations this branch added so they
+sort after everything already in `db/migrate`. Run it from a worktree root after
+rebasing on `main_branch`. Migrations added since the merge base with
+`main_branch` (committed, staged, or untracked) are renamed to consecutive
+seconds starting at the current UTC time, or at one second past the newest
+foreign migration when that is later, keeping their relative order. Tracked
+files move with `git mv`, so the rename is staged. When the worktree `.env`
+defines `DATABASE_URL`, matching `schema_migrations` rows are updated through
+`psql` in one transaction before the files move, so an applied migration is not
+re-run; a failing `psql` only prints a yellow warning. Nothing is renamed when a
+target file already exists.
+
+`dbst` is a fast `bin/rails db:migrate:status`. It prints the last 20
+migrations (all of them with `--full`) with their up/down state, ID, name, and
+the committer: the part before `@` in the email of whoever added the migration
+file in git. The state comes from `schema_migrations` through `psql`, using the
+same database lookup as [`new -d`](#rails-and-database-tools) in the Rails root of the checkout
+you are in; outside `project_root` and its worktrees it exits with an error.
+Versions applied in the database without a file show as
+`********** NO FILE **********`, like Rails. When `db/schema.rb` writes its
+version with underscores (`2026_09_29_125131`), IDs are shown the same way.
+When the current branch has an upstream (`git branch --set-upstream-to=ups/rebuild`),
+IDs of migrations whose files are not on that upstream yet are shown in yellow.
+
+### Redmine
+
+`redmine` opens `<redmine_url>/issues/<number>` in the default browser, using
+the issue number at the end of the current branch name. For example, branch
+`DEV-3454` opens `https://redmine.example.com/issues/3454`. When `redmine_url`
+has no scheme, `https://` is used.
+
+### macOS updater
 
 `open` launches macOS Terminal in the selected worktree.
-
-`remove` calls `git worktree remove`, which removes the registered worktree and
-its directory but keeps the Git branch. It refuses dirty worktrees unless
-`--force` is explicitly supplied.
-
-`delete_all` preserves the configured main checkout and removes every other
-registered worktree and its checked-out local branch. It also refuses dirty
-worktrees unless `--force` is explicitly supplied. Set
-`GIT_PROTECTED_BRANCHES` to comma- or whitespace-separated branch names whose
-worktrees and local branches must be preserved.
 
 On macOS, `updater start` installs and starts **Worktree Target Branch Updater**,
 a user LaunchAgent that runs at
@@ -430,3 +436,8 @@ macOS app so Login Items shows its proper name and icon.
 executes one update immediately. Output is written to `~/.mrsk/updater.log` and
 errors to `~/.mrsk/updater.error.log`. A failed Bundler or migration step is
 retried on the next run. Only one project updater runs per user.
+
+## Licenses
+
+The mrsk CLI is covered by the [MIT license](LICENSE). The bundled
+open-code-review has its own [Apache 2.0 license](third_party/open-code-review/LICENSE).

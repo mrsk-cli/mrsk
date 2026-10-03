@@ -1,5 +1,7 @@
 # APT packaging
 
+[Back to mrsk](../README.md)
+
 Packages support Debian 13 and Ubuntu 24.04 on amd64 and arm64. The CLI and
 vendored open-code-review are built from source. The package keeps its binaries
 under `/usr/lib/mrsk` and exposes only `/usr/bin/mrsk`, so another installation
@@ -16,7 +18,7 @@ are never overwritten. Use a new version for changed packages.
 
 The repository uses GitHub Pages with GitHub Actions as its build source.
 `APT_SIGNING_KEY` is a repository Actions secret containing an armored private
-signing key. Its public certificate is tracked at `apt/mrsk.gpg`. Keep the
+signing key. Its public certificate is tracked at [apt/mrsk.gpg](apt/mrsk.gpg). Keep the
 private key and its revocation certificate in a secure backup outside Git.
 Renew or replace the key before its expiry, and publish the public certificate
 with the matching key in the secret.
