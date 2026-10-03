@@ -1,0 +1,94 @@
+name: Approved signed APT privacy cleanup
+run-name: Approved mrsk v0.1.1 signed APT privacy cleanup
+
+on:
+  workflow_dispatch:
+    inputs:
+      confirm:
+        description: Enter republish-v0.1.1-apt
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+jobs:
+  republish:
+    if: github.repository == 'mrsk-cli/mrsk' && github.ref == 'refs/heads/main' && inputs.confirm == 'republish-v0.1.1-apt'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    concurrency:
+      group: apt-publish
+      cancel-in-progress: false
+    permissions:
+      contents: read
+      pages: write
+      id-token: write
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          ref: f5dbb74400fd2fad5382ed8a2418899fce5b0d9a
+      - name: Download exact verified release packages
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          python3 - <<'PYCODE'
+          import hashlib, json, pathlib, subprocess
+          base = 'repos/mrsk-cli/mrsk/'
+          def api(path):
+              return json.loads(subprocess.check_output(['gh', 'api', base + path]))
+          assert api('git/ref/tags/v0.1.1')['object']['sha'] == '4f4df2d183ab80000920b4cffeba271ac77c2b83'
+          assert api('releases/latest')['id'] == 401385589
+          release = api('releases/401385589')
+          assert release['tag_name'] == 'v0.1.1'
+          assets = {a['id']: a for a in release['assets']}
+          packages = [
+              (608014899, 'amd64', '6c6d5c5be1e8ff340c55e792c3d3de8734c5b80bd45599146f7664803b0faf6f'),
+              (608014801, 'arm64', '463c44459b1d76ee86f0a0a3a22ea01008a389b50b4428e46c4bdc8d13570b51'),
+          ]
+          assert set(assets) == {p[0] for p in packages}
+          dest = pathlib.Path('dist/deb'); dest.mkdir(parents=True)
+          for asset_id, architecture, expected in packages:
+              name = f'mrsk_0.1.1_{architecture}.deb'
+              assert assets[asset_id]['name'] == name
+              data = subprocess.check_output(['gh', 'api', base + f'releases/assets/{asset_id}', '-H', 'Accept: application/octet-stream'])
+              assert hashlib.sha256(data).hexdigest() == expected
+              path = dest / name; path.write_bytes(data)
+              for field, value in [('Package', 'mrsk'), ('Version', '0.1.1'), ('Architecture', architecture)]:
+                  assert subprocess.check_output(['dpkg-deb', '-f', str(path), field], text=True).strip() == value
+              print(name, expected)
+          PYCODE
+      - name: Install repository build tools
+        run: sudo apt-get update -qq && sudo apt-get install -y -qq dpkg-dev apt-utils
+      - name: Build and verify signed repository
+        env:
+          APT_SIGNING_KEY: ${{ secrets.APT_SIGNING_KEY }}
+        run: |
+          export GNUPGHOME=$(mktemp -d)
+          trap 'gpgconf --kill gpg-agent; rm -rf "$GNUPGHOME"' EXIT
+          printf '%s' "$APT_SIGNING_KEY" | gpg --batch --import
+          export APT_SIGNING_KEY_ID=$(gpg --show-keys --with-colons packaging/apt/mrsk.gpg | awk -F: '$1 == "fpr" { print $10; exit }')
+          scripts/build-apt-repo.sh dist/site/apt dist/deb/*.deb
+          cmp packaging/apt/mrsk.gpg dist/site/apt/mrsk.gpg
+          gpgv --keyring "$PWD/packaging/apt/mrsk.gpg" dist/site/apt/dists/stable/InRelease
+          gpgv --keyring "$PWD/packaging/apt/mrsk.gpg" dist/site/apt/dists/stable/Release.gpg dist/site/apt/dists/stable/Release
+          for image in ubuntu:24.04 debian:trixie; do
+            docker run --rm -v "$PWD/dist/site/apt:/repo:ro" -v "$PWD/tests:/tests:ro" \
+              "$image" sh /tests/apt-install.sh file:/repo 0.1.1
+          done
+      - name: Recheck publication target
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          test "$(gh api repos/mrsk-cli/mrsk/git/ref/tags/v0.1.1 --jq .object.sha)" = 4f4df2d183ab80000920b4cffeba271ac77c2b83
+          test "$(gh api repos/mrsk-cli/mrsk/releases/latest --jq .id)" = 401385589
+          test "$(gh api repos/mrsk-cli/mrsk/releases/401385589 --jq '[.assets[].id] | sort | join(",")')" = 608014801,608014899
+      - uses: actions/configure-pages@45bfe0192ca1faeb007ade9deae92b16b8254a0d
+      - uses: actions/upload-pages-artifact@fc324d3547104276b827a68afc52ff2a11cc49c9
+        with:
+          path: dist/site
+      - uses: actions/deploy-pages@368f82528645a54fb793d4d04e342629a3f51346
+        id: deployment
