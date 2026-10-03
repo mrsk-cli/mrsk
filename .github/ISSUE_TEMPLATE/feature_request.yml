@@ -1,0 +1,25 @@
+name: Feature request
+description: Suggest a way to make mrsk more useful
+body:
+  - type: markdown
+    attributes:
+      value: Please search existing issues first. Keep private data out of examples.
+  - type: textarea
+    id: problem
+    attributes:
+      label: What task is hard today?
+      description: Explain what you are trying to do and how you do it now.
+    validations:
+      required: true
+  - type: textarea
+    id: change
+    attributes:
+      label: What would help?
+      description: Describe the result you want. A command example may help.
+    validations:
+      required: true
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: Other ways to solve it
+      description: Share any other tools or approaches you have tried.
