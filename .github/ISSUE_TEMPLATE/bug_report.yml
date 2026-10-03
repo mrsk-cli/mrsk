@@ -1,0 +1,35 @@
+name: Bug report
+description: Report a problem with mrsk
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Please search existing issues first. Remove secrets and private data from all examples and logs.
+  - type: textarea
+    id: environment
+    attributes:
+      label: Setup
+      description: Include your OS, shell, Git version, install method, and mrsk package version or source commit if known.
+      placeholder: "Ubuntu 24.04, zsh, Git 2.43, APT; mrsk package version from apt show mrsk"
+    validations:
+      required: true
+  - type: textarea
+    id: steps
+    attributes:
+      label: Steps to see the problem
+      description: Give the commands and a small config example with private values removed.
+    validations:
+      required: true
+  - type: textarea
+    id: expected
+    attributes:
+      label: What did you expect?
+    validations:
+      required: true
+  - type: textarea
+    id: actual
+    attributes:
+      label: What happened instead?
+      description: Include the full error text if there is one. Remove secrets and private data.
+    validations:
+      required: true
