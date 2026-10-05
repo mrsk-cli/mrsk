@@ -1,3 +1,4 @@
+# Maintainer: mrsk-cli contributors <https://github.com/mrsk-cli/mrsk>
 pkgname=mrsk
 pkgver=0.1.1
 pkgrel=1
@@ -24,8 +25,10 @@ build() {
         -o mrsk src/mrsk.c
     export GOPATH="${srcdir}/go" GOCACHE="${srcdir}/go-build" GOTOOLCHAIN=local
     install -d dist
-    CGO_ENABLED=0 go -C third_party/open-code-review build -trimpath -mod=readonly -buildvcs=false \
-        -buildmode=pie -ldflags "-X main.Version=$(cat third_party/open-code-review/VERSION)" \
+    CGO_ENABLED=1 CGO_CPPFLAGS="$CPPFLAGS" CGO_CFLAGS="$CFLAGS" CGO_LDFLAGS="$LDFLAGS" \
+        go -C third_party/open-code-review build -trimpath -mod=readonly -buildvcs=false \
+        -buildmode=pie \
+        -ldflags "-X main.Version=$(cat third_party/open-code-review/VERSION) -linkmode=external -extldflags \"$LDFLAGS\"" \
         -o "$PWD/dist/ocr" ./cmd/opencodereview
 }
 
