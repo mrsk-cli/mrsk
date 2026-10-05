@@ -4,7 +4,7 @@ pkgrel=1
 pkgdesc='Manage Git worktrees beside a configured main checkout'
 arch=('x86_64')
 url='https://github.com/mrsk-cli/mrsk'
-license=('MIT')
+license=('MIT' 'Apache-2.0')
 depends=('glibc' 'bash' 'git>=2.41' 'ca-certificates')
 optdepends=('zsh: worktree navigation shell hook'
             'ruby: Rails migration helpers'

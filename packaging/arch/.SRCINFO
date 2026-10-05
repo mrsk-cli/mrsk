@@ -5,6 +5,7 @@ pkgbase = mrsk
 	url = https://github.com/mrsk-cli/mrsk
 	arch = x86_64
 	license = MIT
+	license = Apache-2.0
 	checkdepends = ruby
 	checkdepends = zsh
 	makedepends = go>=1.25.5
