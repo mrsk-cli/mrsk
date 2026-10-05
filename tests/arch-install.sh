@@ -12,6 +12,7 @@ test -x /usr/lib/mrsk/mrsk
 test -x /usr/lib/mrsk/ocr
 test -f /usr/share/licenses/mrsk/LICENSE
 test -f /usr/share/licenses/mrsk/open-code-review.LICENSE
+test -f /usr/share/licenses/mrsk/open-code-review.icons.NOTICE
 test -f /usr/share/doc/mrsk/README.md
 
 tmp=$(mktemp -d)
