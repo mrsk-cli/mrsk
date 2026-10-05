@@ -1,0 +1,48 @@
+pkgname=mrsk
+pkgver=0.1.1
+pkgrel=1
+pkgdesc='Manage Git worktrees beside a configured main checkout'
+arch=('x86_64')
+url='https://github.com/mrsk-cli/mrsk'
+license=('MIT')
+depends=('glibc' 'bash' 'git>=2.41' 'ca-certificates')
+optdepends=('zsh: worktree navigation shell hook'
+            'ruby: Rails migration helpers'
+            'vim: edit configuration with mrsk configure'
+            'postgresql-libs: database commands (psql)'
+            'xdg-utils: open Redmine links')
+makedepends=('go>=1.25.5')
+checkdepends=('ruby' 'zsh')
+options=('!debug')
+source=("${pkgname}-${pkgver}.tar.gz::${url}/archive/refs/tags/v${pkgver}.tar.gz")
+sha256sums=('869015ca1b8fe28d3a4e723636058bd3f9bf7bef9e872583b5c8aeeebe3a3227')
+
+build() {
+    cd "${pkgname}-${pkgver}"
+    # The release Makefile does not pass CPPFLAGS or LDFLAGS through.
+    ${CC:-cc} $CPPFLAGS $CFLAGS -std=c11 -Wall -Wextra -Wpedantic $LDFLAGS \
+        -o mrsk src/mrsk.c
+    export GOPATH="${srcdir}/go" GOCACHE="${srcdir}/go-build" GOTOOLCHAIN=local
+    install -d dist
+    CGO_ENABLED=0 go -C third_party/open-code-review build -trimpath -mod=readonly \
+        -buildmode=pie -ldflags "-X main.Version=$(cat third_party/open-code-review/VERSION)" \
+        -o "$PWD/dist/ocr" ./cmd/opencodereview
+}
+
+check() {
+    cd "${pkgname}-${pkgver}"
+    make test
+}
+
+package() {
+    cd "${pkgname}-${pkgver}"
+    install -Dm755 packaging/deb/mrsk "${pkgdir}/usr/bin/mrsk"
+    install -Dm755 mrsk "${pkgdir}/usr/lib/mrsk/mrsk"
+    install -Dm755 dist/ocr "${pkgdir}/usr/lib/mrsk/ocr"
+    install -Dm755 worktree-target-branch-updater \
+        "${pkgdir}/usr/lib/mrsk/worktree-target-branch-updater"
+    install -Dm644 LICENSE "${pkgdir}/usr/share/licenses/mrsk/LICENSE"
+    install -Dm644 third_party/open-code-review/LICENSE \
+        "${pkgdir}/usr/share/licenses/mrsk/open-code-review.LICENSE"
+    install -Dm644 README.md "${pkgdir}/usr/share/doc/mrsk/README.md"
+}

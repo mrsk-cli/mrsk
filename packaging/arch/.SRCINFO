@@ -1,0 +1,24 @@
+pkgbase = mrsk
+	pkgdesc = Manage Git worktrees beside a configured main checkout
+	pkgver = 0.1.1
+	pkgrel = 1
+	url = https://github.com/mrsk-cli/mrsk
+	arch = x86_64
+	license = MIT
+	checkdepends = ruby
+	checkdepends = zsh
+	makedepends = go>=1.25.5
+	depends = glibc
+	depends = bash
+	depends = git>=2.41
+	depends = ca-certificates
+	optdepends = zsh: worktree navigation shell hook
+	optdepends = ruby: Rails migration helpers
+	optdepends = vim: edit configuration with mrsk configure
+	optdepends = postgresql-libs: database commands (psql)
+	optdepends = xdg-utils: open Redmine links
+	options = !debug
+	source = mrsk-0.1.1.tar.gz::https://github.com/mrsk-cli/mrsk/archive/refs/tags/v0.1.1.tar.gz
+	sha256sums = 869015ca1b8fe28d3a4e723636058bd3f9bf7bef9e872583b5c8aeeebe3a3227
+
+pkgname = mrsk

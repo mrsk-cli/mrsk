@@ -85,6 +85,30 @@ For zsh worktree navigation, add `eval "$(mrsk shell-init)"` to `~/.zshrc` and
 open a new shell. The macOS-only `open` and `updater` commands remain unavailable
 on Linux.
 
+### Arch Linux and Omarchy
+
+On x86_64 Arch or Omarchy, build and install the pinned release package as a
+regular user (review the recipe before running `makepkg`):
+
+```sh
+sudo pacman -Syu --needed base-devel git
+git clone https://github.com/mrsk-cli/mrsk.git
+cd mrsk/packaging/arch
+makepkg -si
+```
+
+The package includes a private `ocr`. Configure its provider and model using
+`/usr/lib/mrsk/ocr config provider` and `/usr/lib/mrsk/ocr config model`.
+For the optional zsh shortcut, install `zsh`, add
+`eval "$(command mrsk shell-init)"` to `~/.zshrc`, and open a new shell.
+Installation does not edit your shell configuration.
+
+`mrsk` is not yet published in the AUR or Omarchy package repositories.
+After AUR publication, Omarchy's **Install > AUR** menu or
+`omarchy pkg aur add mrsk` (equivalently `yay -S mrsk`) can install it.
+`omarchy pkg add mrsk` needs separate acceptance and publication in Omarchy's
+package repository. See the [Arch maintainer guide](packaging/arch/README.md).
+
 ### Build from source
 
 ```sh
