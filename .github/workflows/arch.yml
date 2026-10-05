@@ -50,7 +50,7 @@ jobs:
           '
 
       - name: Test installed package as a regular user
-        run: sh tests/arch-install.sh /home/builder/source/packaging/arch/mrsk-*.pkg.tar.zst 0.1.1-1
+        run: sh -x tests/arch-install.sh /home/builder/source/packaging/arch/mrsk-*.pkg.tar.zst 0.1.1-1
 
       - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
         with:

@@ -6,7 +6,7 @@ package=${1:?Usage: arch-install.sh PACKAGE}
 version=${2:?VERSION is required}
 pacman -U --noconfirm "$package"
 test "$(pacman -Q mrsk)" = "mrsk $version"
-test "$(command -v mrsk)" = /usr/bin/mrsk
+test "$(readlink -f "$(command -v mrsk)")" = /usr/bin/mrsk
 test ! -e /usr/bin/ocr
 test -x /usr/lib/mrsk/mrsk
 test -x /usr/lib/mrsk/ocr
