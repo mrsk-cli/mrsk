@@ -26,6 +26,7 @@ The core CLI is written in POSIX C and runs on macOS and Linux.
 | Use | What you need |
 | --- | --- |
 | Create, list, and remove worktrees | macOS or Linux, and Git 2.36 or newer |
+| Clone a GitHub repository with `mrsk clone` | GitHub SSH authentication; HTTPS inputs also use SSH |
 | Change directory with `mrsk 2491` | zsh and the shell integration below; explicit commands work without it |
 | AI review | `ocr`, Git 2.41 or newer, and an LLM provider and model configured for a full review |
 | Build from source | Make, a C11 compiler, and Go 1.25.5 or newer for the bundled `ocr` |
@@ -295,7 +296,11 @@ configured.
 `clone` accepts one GitHub HTTPS or SSH repository URL. A `.git` suffix is
 optional, and HTTPS URLs may have a trailing slash. Both forms are normalized
 to SSH, so both URL forms use `git@github.com:basecamp/fizzy.git` for Git
-operations. Before creating files, `git ls-remote --symref` discovers and
+operations. Set up [GitHub SSH authentication](https://docs.github.com/en/authentication/connecting-to-github-with-ssh)
+first, even for public repositories. If Git reports `Permission denied (publickey)`,
+check your SSH key setup.
+
+Before creating files, `git ls-remote --symref` discovers and
 validates the remote default branch instead of assuming `main` or `master`.
 The repository is then cloned to the absolute path `<current-directory>/fizzy/main`
 with only an `ups` remote, and the detected branch tracks `ups`.
