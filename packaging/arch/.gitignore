@@ -1,0 +1,7 @@
+/src/
+/pkg/
+/go/
+/*.tar.gz
+/*.pkg.tar.*
+/.SRCINFO.generated
+/namcap.log

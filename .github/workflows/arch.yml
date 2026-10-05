@@ -1,0 +1,66 @@
+name: Arch
+
+on:
+  push:
+    branches: [main, 'packaging/**']
+    paths:
+      - 'packaging/arch/**'
+      - 'tests/arch-install.sh'
+      - '.github/workflows/arch.yml'
+  pull_request:
+    branches: [main]
+    paths:
+      - 'packaging/arch/**'
+      - 'tests/arch-install.sh'
+      - '.github/workflows/arch.yml'
+
+permissions:
+  contents: read
+
+concurrency:
+  group: arch-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  package:
+    name: Package x86_64
+    runs-on: ubuntu-24.04
+    container: archlinux:base-devel
+    timeout-minutes: 20
+    steps:
+      - name: Install build and test tools
+        run: pacman -Syu --noconfirm --needed go git ruby zsh ca-certificates namcap
+
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Create unprivileged builder
+        run: |
+          useradd -m builder
+          cp -a "$GITHUB_WORKSPACE" /home/builder/source
+          chown -R builder:builder /home/builder/source
+
+      - name: Build and check the pinned release package
+        run: |
+          runuser -u builder -- bash -euo pipefail -c '
+            cd /home/builder/source/packaging/arch
+            makepkg --printsrcinfo | tee .SRCINFO.generated | diff -u .SRCINFO -
+            makepkg --cleanbuild --noconfirm
+            namcap PKGBUILD mrsk-*.pkg.tar.zst | tee namcap.log
+            ! grep -q " E: " namcap.log
+          '
+
+      - name: Test installed package as a regular user
+        run: |
+          # The base image excludes documentation; test extraction of the full package.
+          pacman-conf NoExtract
+          sed -i '/^NoExtract[[:space:]]*=/d' /etc/pacman.conf
+          sh -x tests/arch-install.sh /home/builder/source/packaging/arch/mrsk-*.pkg.tar.zst 0.1.1-1
+
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+        with:
+          name: mrsk-arch-x86_64
+          include-hidden-files: true
+          path: |
+            /home/builder/source/packaging/arch/*.pkg.tar.zst
+            /home/builder/source/packaging/arch/.SRCINFO.generated
+          if-no-files-found: error
