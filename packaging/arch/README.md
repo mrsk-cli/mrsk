@@ -18,7 +18,8 @@ makepkg -si
 
 The package uses the existing Debian wrapper: `/usr/bin/mrsk` runs the CLI
 with `/usr/lib/mrsk` first in PATH. Both `mrsk` and `ocr`, plus the updater
-helper, remain private there. Licenses go under `/usr/share/licenses/mrsk`,
+helper, remain private there. Licenses and the bundled icon attribution go
+under `/usr/share/licenses/mrsk`,
 and the release README under `/usr/share/doc/mrsk`. No shell files are edited;
 the existing `mrsk shell-init` hook supplies optional zsh navigation.
 Ruby, Vim, PostgreSQL's `psql`, and `xdg-open` are optional dependencies for
