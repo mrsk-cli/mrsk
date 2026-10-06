@@ -2152,6 +2152,26 @@ static bool local_branch_exists(const Project *project, const char *branch, int 
     return status == 0;
 }
 
+// Undo a half-made `new`: remove the worktree, and the branch when this run created it.
+static void rollback_worktree(const Project *project, const char *path, const char *branch)
+{
+    char *const remove_command[] = {
+        "git", "-C", project->project_root, "worktree", "remove", "--force", "--", (char *)path, NULL
+    };
+    char *const delete_command[] = {
+        "git", "-C", project->project_root, "branch", "-D", "--", (char *)branch, NULL
+    };
+    int status = run_process(remove_command, false);
+    if (status == 0 && branch != NULL) {
+        status = run_process(delete_command, false);
+    }
+    if (status == 0) {
+        fprintf(stderr, "mrsk: rolled back %s\n", path);
+    } else {
+        fprintf(stderr, "mrsk: rollback failed, clean up %s by hand\n", path);
+    }
+}
+
 static int create_worktree(Project *project, const char *branch, bool database)
 {
     if (validate_branch(project, branch) != 0) {
@@ -2209,6 +2229,7 @@ static int create_worktree(Project *project, const char *branch, bool database)
         };
         status = run_process(command, false);
     }
+    bool worktree_added = status == 0;
 
     if (status == 0) {
         status = copy_project_paths(project, path);
@@ -2221,6 +2242,8 @@ static int create_worktree(Project *project, const char *branch, bool database)
     }
     if (status == 0) {
         printf("Created %s\n", path);
+    } else if (worktree_added) {
+        rollback_worktree(project, path, exists ? NULL : branch);
     }
     free(path);
     return status;
