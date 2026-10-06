@@ -16,6 +16,7 @@ mkdir -p "$HOME/.mrsk" "$tmp/bin" "$project/main"
 cat > "$tmp/bin/psql" <<'EOF'
 #!/bin/sh
 printf '%s\n' "$@" >> "$PSQL_LOG"
+case "$*" in *_broken*) echo 'ERROR:  source database is being accessed by other users' >&2; exit 1 ;; esac
 case "$*" in *"SELECT version FROM schema_migrations"*) cat "$PSQL_VERSIONS" ;; esac
 EOF
 chmod +x "$tmp/bin/psql"
@@ -102,6 +103,27 @@ if grep -q 'feature_plain' "$PSQL_LOG"; then
     echo "unexpected psql call for feature-plain" >&2
     exit 1
 fi
+
+if "$MRSK_BIN" new -d feature/broken 2>"$tmp/broken.out"; then
+    echo "expected failed database creation to fail" >&2
+    exit 1
+fi
+grep -q 'being accessed by other users' "$tmp/broken.out"
+grep -q 'rolled back' "$tmp/broken.out"
+test ! -e "$project/feature-broken"
+if git -C "$project/main" show-ref --verify --quiet refs/heads/feature/broken; then
+    echo "expected new branch to be rolled back" >&2
+    exit 1
+fi
+
+git -C "$project/main" branch kept/broken
+if "$MRSK_BIN" new -d kept/broken 2>/dev/null; then
+    echo "expected failed database creation to fail" >&2
+    exit 1
+fi
+test ! -e "$project/kept-broken"
+git -C "$project/main" show-ref --verify --quiet refs/heads/kept/broken
+git -C "$project/main" branch -D -q kept/broken
 
 "$MRSK_BIN" 123 -d
 test -d "$project/123"
