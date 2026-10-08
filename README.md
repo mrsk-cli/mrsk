@@ -296,6 +296,7 @@ remains valid for a single project.
 | `mrsk [project] list` | List registered worktrees and database/migration state |
 | `mrsk [project] remove [--force] <branch>` | Remove one worktree, keeping its branch |
 | `mrsk [project] delete_all [--force]` | Remove other worktrees **and their local branches**; see [deletion details](#worktrees) |
+| `mrsk [project] prune [--force]` | List databases left behind by deleted worktrees; drop them with `--force` |
 | `mrsk 2491` or `mrsk DEV-2491` | Create or enter a task worktree with the [zsh hook](#shell-shortcuts); accepts `-d` |
 | `mrsk review [options]` | Review changes, a branch range, or a commit with [open-code-review](#ai-review) |
 | `mrsk rails-schema-confl` | Resolve a standard Rails schema version conflict |
@@ -404,6 +405,12 @@ rewrites `DATABASE_URL` in the worktree's `.env` to point at the copy. The templ
 connections, so stop Rails servers on the main checkout first. `remove` and
 `delete_all` drop a worktree's own database after the worktree is removed, and
 `list` marks such worktrees with `[database: <name>]`.
+
+A worktree deleted another way (`git worktree remove`, `rm -rf`) leaves its
+database behind. `prune` lists every `<db>_*` database whose worktree folder no
+longer exists, and `prune --force` drops them. Names that appear in the main
+checkout's `config/database.yml` (such as Rails 8's `<db>_cache`) are never
+listed.
 
 After the database copy, if the worktree's `db/migrate` contains files the main
 checkout does not have, `bin/rails db:migrate` starts in the background so the
