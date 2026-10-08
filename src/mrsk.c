@@ -2895,7 +2895,7 @@ static int command_bump_migration_version(Project *project, int argc, char **arg
         "abort 'mrsk: db/migrate not found in the Rails root' unless Dir.exist?('db/migrate')\n"
         "base = IO.popen(['git', 'merge-base', 'HEAD', ARGV[0]], &:read).strip\n"
         "abort \"mrsk: no merge base with #{ARGV[0]}\" if base.empty?\n"
-        "added = IO.popen(['git', 'diff', '--name-only', '--diff-filter=A', base, '--', 'db/migrate'], &:read) +\n"
+        "added = IO.popen(['git', 'diff', '--relative', '--name-only', '--diff-filter=A', base, '--', 'db/migrate'], &:read) +\n"
         "        IO.popen(['git', 'ls-files', '--others', '--exclude-standard', '--', 'db/migrate'], &:read)\n"
         "mine = added.split(\"\\n\").grep(%r{\\Adb/migrate/\\d{14}_.+\\.rb\\z}).uniq.sort\n"
         "abort \"mrsk: no migrations added on this branch since #{ARGV[0]}\" if mine.empty?\n"

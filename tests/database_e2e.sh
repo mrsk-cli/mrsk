@@ -351,6 +351,8 @@ grep -q 'DROP DATABASE IF EXISTS "mono_development_mono_mig"' "$PSQL_LOG"
 
 "$MRSK_BIN" new mono/bump
 touch "$mono/mono-bump/back-end/db/migrate/20260803000000_mine.rb"
+git -C "$mono/mono-bump" add back-end/db/migrate
+git -C "$mono/mono-bump" commit -qm mine
 (cd "$mono/mono-bump/front-end" && "$MRSK_BIN" bump-migration-version)
 test ! -e "$mono/mono-bump/back-end/db/migrate/20260803000000_mine.rb"
 "$MRSK_BIN" remove --force mono/bump
