@@ -2726,9 +2726,7 @@ static int command_prune(Project *project, int argc, char **argv)
             status = 1;
         }
     }
-    if (found == 0) {
-        printf("No orphan databases\n");
-    } else if (!force) {
+    if (found > 0 && !force) {
         fprintf(stderr, "mrsk: run 'mrsk prune --force' to drop these databases\n");
     }
 
