@@ -2769,50 +2769,6 @@ done:
     return status;
 }
 
-static int command_bump_migration_version(Project *project, int argc, char **argv)
-{
-    (void)argv;
-    if (argc != 0) {
-        usage(stderr);
-        return 2;
-    }
-
-    char cwd[PATH_MAX];
-    if (getcwd(cwd, sizeof(cwd)) == NULL) {
-        fprintf(stderr, "mrsk: cannot get current directory: %s\n", strerror(errno));
-        return 1;
-    }
-
-    char *url = read_env_database_url(cwd);
-    char *const command[] = {
-        "ruby", "-e",
-        "abort 'mrsk: db/migrate not found; run from the project root' unless Dir.exist?('db/migrate')\n"
-        "base = IO.popen(['git', 'merge-base', 'HEAD', ARGV[0]], &:read).strip\n"
-        "abort \"mrsk: no merge base with #{ARGV[0]}\" if base.empty?\n"
-        "added = IO.popen(['git', 'diff', '--name-only', '--diff-filter=A', base, '--', 'db/migrate'], &:read) +\n"
-        "        IO.popen(['git', 'ls-files', '--others', '--exclude-standard', '--', 'db/migrate'], &:read)\n"
-        "mine = added.split(\"\\n\").grep(%r{\\Adb/migrate/\\d{14}_.+\\.rb\\z}).uniq.sort\n"
-        "abort \"mrsk: no migrations added on this branch since #{ARGV[0]}\" if mine.empty?\n"
-        "newest = (Dir['db/migrate/*.rb'] - mine).map { |file| File.basename(file)[0, 14] }.grep(/\\A\\d{14}\\z/).max.to_s\n"
-        "start = Time.now.utc\n"
-        "start = [start, Time.utc(*newest.unpack('A4A2A2A2A2A2').map(&:to_i)) + 1].max unless newest.empty?\n"
-        "renames = mine.each_with_index.map { |file, index| [file, \"db/migrate/#{(start + index).strftime('%Y%m%d%H%M%S')}_#{File.basename(file)[15..]}\"] }\n"
-        "renames.reject! { |old, new| old == new }\n"
-        "abort 'mrsk: migrations already carry the newest versions' if renames.empty?\n"
-        "renames.each { |_, new| abort \"mrsk: #{new} already exists\" if File.exist?(new) }\n"
-        "sql = renames.map { |old, new| \"UPDATE schema_migrations SET version = '#{File.basename(new)[0, 14]}' WHERE version = '#{File.basename(old)[0, 14]}'\" }.join('; ')\n"
-        "url = ARGV[1].to_s\n"
-        "if !url.empty? && !system('psql', url, '-X', '-q', '-v', 'ON_ERROR_STOP=1', '-c', sql)\n"
-        "  warn \"\\e[33mmrsk: warning: schema_migrations not updated\\e[0m\"\n"
-        "end\n"
-        "renames.each { |old, new| system('git', 'mv', '--', old, new, err: File::NULL) || File.rename(old, new); puts \"#{File.basename(old)} -> #{File.basename(new)}\" }\n",
-        "--", project->main_branch, url != NULL ? url : "", NULL
-    };
-    int status = run_process(command, false);
-    free(url);
-    return status;
-}
-
 enum { COLUMN_STATUS, COLUMN_VERSION, COLUMN_NAME, COLUMN_COMMITTER, COLUMN_COUNT };
 
 static char *const migration_titles[COLUMN_COUNT] = {
@@ -2924,6 +2880,59 @@ static char *project_checkout(const Project *project)
     }
     free(common);
     return dir;
+}
+
+static int command_bump_migration_version(Project *project, int argc, char **argv)
+{
+    (void)argv;
+    if (argc != 0) {
+        usage(stderr);
+        return 2;
+    }
+
+    char *checkout = project_checkout(project);
+    if (checkout == NULL) {
+        fprintf(stderr, "mrsk: bump-migration-version must run inside a checkout of %s\n",
+                project->project_root);
+        return 1;
+    }
+    char *rails = rails_path(project, checkout);
+    free(checkout);
+    if (rails == NULL || chdir(rails) != 0) {
+        fprintf(stderr, "mrsk: cannot enter Rails root %s\n", rails != NULL ? rails : "");
+        free(rails);
+        return 1;
+    }
+
+    char *url = read_env_database_url(rails);
+    free(rails);
+    char *const command[] = {
+        "ruby", "-e",
+        "abort 'mrsk: db/migrate not found in the Rails root' unless Dir.exist?('db/migrate')\n"
+        "base = IO.popen(['git', 'merge-base', 'HEAD', ARGV[0]], &:read).strip\n"
+        "abort \"mrsk: no merge base with #{ARGV[0]}\" if base.empty?\n"
+        "added = IO.popen(['git', 'diff', '--relative', '--name-only', '--diff-filter=A', base, '--', 'db/migrate'], &:read) +\n"
+        "        IO.popen(['git', 'ls-files', '--others', '--exclude-standard', '--', 'db/migrate'], &:read)\n"
+        "mine = added.split(\"\\n\").grep(%r{\\Adb/migrate/\\d{14}_.+\\.rb\\z}).uniq.sort\n"
+        "abort \"mrsk: no migrations added on this branch since #{ARGV[0]}\" if mine.empty?\n"
+        "newest = (Dir['db/migrate/*.rb'] - mine).map { |file| File.basename(file)[0, 14] }.grep(/\\A\\d{14}\\z/).max.to_s\n"
+        "start = Time.now.utc\n"
+        "start = [start, Time.utc(*newest.unpack('A4A2A2A2A2A2').map(&:to_i)) + 1].max unless newest.empty?\n"
+        "renames = mine.each_with_index.map { |file, index| [file, \"db/migrate/#{(start + index).strftime('%Y%m%d%H%M%S')}_#{File.basename(file)[15..]}\"] }\n"
+        "renames.reject! { |old, new| old == new }\n"
+        "abort 'mrsk: migrations already carry the newest versions' if renames.empty?\n"
+        "renames.each { |_, new| abort \"mrsk: #{new} already exists\" if File.exist?(new) }\n"
+        "sql = renames.map { |old, new| \"UPDATE schema_migrations SET version = '#{File.basename(new)[0, 14]}' WHERE version = '#{File.basename(old)[0, 14]}'\" }.join('; ')\n"
+        "url = ARGV[1].to_s\n"
+        "if !url.empty? && !system('psql', url, '-X', '-q', '-v', 'ON_ERROR_STOP=1', '-c', sql)\n"
+        "  warn \"\\e[33mmrsk: warning: schema_migrations not updated\\e[0m\"\n"
+        "end\n"
+        "renames.each { |old, new| system('git', 'mv', '--', old, new, err: File::NULL) || File.rename(old, new); puts \"#{File.basename(old)} -> #{File.basename(new)}\" }\n",
+        "--", project->main_branch, url != NULL ? url : "", NULL
+    };
+    int status = run_process(command, false);
+    free(url);
+    return status;
 }
 
 static bool schema_uses_underscores(const char *rails)
