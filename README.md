@@ -424,11 +424,12 @@ the shared database is never migrated automatically.
 the newest timestamp from `db/migrate`. Run it from the Rails project root.
 
 `bump-migration-version` re-timestamps the migrations this branch added so they
-sort after everything already in `db/migrate`. Run it from a worktree root after
-rebasing on `main_branch`. Migrations added since the merge base with
-`main_branch` (committed, staged, or untracked) are renamed to consecutive
-seconds starting at the current UTC time, or at one second past the newest
-foreign migration when that is later, keeping their relative order. Tracked
+sort after everything already in `db/migrate`. Run it anywhere in a checkout
+after rebasing on `main_branch`; it works in the checkout's Rails root.
+Migrations added since the merge base with `main_branch` (committed, staged,
+or untracked) are renamed to consecutive seconds starting at the current UTC
+time, or at one second past the newest foreign migration when that is later,
+keeping their relative order. Tracked
 files move with `git mv`, so the rename is staged. When the worktree `.env`
 defines `DATABASE_URL`, matching `schema_migrations` rows are updated through
 `psql` in one transaction before the files move, so an applied migration is not
@@ -464,9 +465,11 @@ login and every 10 minutes. It updates the configured `project_root` with
 `git pull --rebase`, using the checked-out `main_branch` and its Git tracking
 remote. After a successful pull it runs `bundle install` when `Gemfile` or
 `Gemfile.lock` changed, then `bin/rails db:migrate` when new files appeared in
-`db/migrate`. The captured `PATH` lets launchd find the same Ruby and Bundler
-as the shell that ran `updater start`. The helper is packaged as a background
-macOS app so Login Items shows its proper name and icon.
+`db/migrate`. Both steps run in the Rails root: the repo root when it has
+`config/database.yml`, else the first top-level folder that has one (the
+`rails_root` setting is not read here). The captured `PATH` lets launchd find
+the same Ruby and Bundler as the shell that ran `updater start`. The helper is
+packaged as a background macOS app so Login Items shows its proper name and icon.
 
 `updater stop` unloads the LaunchAgent and removes its plist. `updater run`
 executes one update immediately. Output is written to `~/.mrsk/updater.log` and

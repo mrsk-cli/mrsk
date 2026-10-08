@@ -144,14 +144,28 @@ run()
     after=$(git -C "$root" rev-parse HEAD)
     [ "$baseline" != "$after" ] || exit 0
 
+    # Same lookup as mrsk's Rails root: the repo root, else the first
+    # top-level folder with config/database.yml.
+    # ponytail: rails_root from ~/.mrsk/config.yml is not read here; pass it
+    # in from mrsk if a project needs that override.
+    rails=$root
+    if [ ! -f "$root/config/database.yml" ]; then
+        for dir in "$root"/*/; do
+            if [ -f "${dir}config/database.yml" ]; then
+                rails=${dir%/}
+                break
+            fi
+        done
+    fi
+
     gems=0
     migrations=0
-    git -C "$root" diff --quiet "$baseline" "$after" -- Gemfile Gemfile.lock || {
+    git -C "$rails" diff --quiet "$baseline" "$after" -- Gemfile Gemfile.lock || {
         status=$?
         [ "$status" -eq 1 ] || exit "$status"
         gems=1
     }
-    git -C "$root" diff --quiet --diff-filter=A "$baseline" "$after" -- db/migrate || {
+    git -C "$rails" diff --quiet --diff-filter=A "$baseline" "$after" -- db/migrate || {
         status=$?
         [ "$status" -eq 1 ] || exit "$status"
         migrations=1
@@ -159,11 +173,11 @@ run()
 
     if [ "$gems" -eq 1 ]; then
         echo "Gemfile changed; running bundle install"
-        (cd "$root" && bundle install)
+        (cd "$rails" && bundle install)
     fi
     if [ "$migrations" -eq 1 ]; then
         echo "New migrations found; running bin/rails db:migrate"
-        (cd "$root" && bin/rails db:migrate)
+        (cd "$rails" && bin/rails db:migrate)
     fi
     printf '%s\n' "$after" > "$state"
 }
