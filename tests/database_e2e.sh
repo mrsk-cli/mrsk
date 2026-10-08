@@ -116,6 +116,16 @@ if git -C "$project/main" show-ref --verify --quiet refs/heads/feature/broken; t
     exit 1
 fi
 
+chmod 0444 "$project/main/.env"
+if "$MRSK_BIN" new -d feature/readonly 2>"$tmp/readonly.out"; then
+    echo "expected failed .env write to fail" >&2
+    exit 1
+fi
+chmod 0644 "$project/main/.env"
+grep -q 'cannot write' "$tmp/readonly.out"
+grep -q 'DROP DATABASE IF EXISTS "app_development_feature_readonly"' "$PSQL_LOG"
+test ! -e "$project/feature-readonly"
+
 git -C "$project/main" branch kept/broken
 if "$MRSK_BIN" new -d kept/broken 2>/dev/null; then
     echo "expected failed database creation to fail" >&2

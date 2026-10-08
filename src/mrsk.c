@@ -1816,6 +1816,10 @@ static int create_worktree_database(const Project *project, const char *worktree
                 status = worktree_url != NULL && rails != NULL ?
                          rewrite_env_database(rails, worktree_url) : 1;
                 free(rails);
+                if (status != 0) {
+                    snprintf(sql, sql_length, "DROP DATABASE IF EXISTS \"%s\"", name);
+                    run_database_sql(url, sql);
+                }
             }
             if (status == 0) {
                 printf("Created database %s\n", name);
