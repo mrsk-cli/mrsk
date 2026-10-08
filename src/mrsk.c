@@ -2510,7 +2510,7 @@ static int command_delete_all(Project *project, int argc, char **argv)
                     "git", "-C", project->project_root, "merge-base", "--is-ancestor",
                     branch, project->main_branch, NULL
                 };
-                skip = branch == NULL || run_process(ancestor, true) != 0;
+                skip = branch == NULL || run_process(ancestor, false) != 0;
             }
             if (!skip) {
                 status = remove_worktree(project, path, force);
