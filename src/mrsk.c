@@ -2506,14 +2506,11 @@ static int command_delete_all(Project *project, int argc, char **argv)
             bool skip = strcmp(path, main_path) == 0 || protected_branch(branch);
             if (!skip && merged) {
                 // ponytail: same notion as `git branch --merged`, so squash merges are kept.
-                skip = true;
-                if (branch != NULL) {
-                    char *const ancestor[] = {
-                        "git", "-C", project->project_root, "merge-base", "--is-ancestor",
-                        branch, project->main_branch, NULL
-                    };
-                    skip = run_process(ancestor, true) != 0;
-                }
+                char *const ancestor[] = {
+                    "git", "-C", project->project_root, "merge-base", "--is-ancestor",
+                    branch, project->main_branch, NULL
+                };
+                skip = branch == NULL || run_process(ancestor, true) != 0;
             }
             if (!skip) {
                 status = remove_worktree(project, path, force);
