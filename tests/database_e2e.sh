@@ -9,6 +9,7 @@ trap 'rm -rf "$tmp"' EXIT INT TERM
 export HOME="$tmp/home"
 export PSQL_LOG="$tmp/psql.log"
 export PSQL_VERSIONS="$tmp/versions"
+export PSQL_DATABASES="$tmp/databases"
 unset DATABASE_URL
 project="$tmp/example_project"
 mkdir -p "$HOME/.mrsk" "$tmp/bin" "$project/main"
@@ -18,6 +19,7 @@ cat > "$tmp/bin/psql" <<'EOF'
 printf '%s\n' "$@" >> "$PSQL_LOG"
 case "$*" in *_broken*) echo 'ERROR:  source database is being accessed by other users' >&2; exit 1 ;; esac
 case "$*" in *"SELECT version FROM schema_migrations"*) cat "$PSQL_VERSIONS" ;; esac
+case "$*" in *"FROM pg_database"*) cat "$PSQL_DATABASES" ;; esac
 EOF
 chmod +x "$tmp/bin/psql"
 ln -s "$MRSK_BIN" "$tmp/bin/mrsk"
@@ -277,6 +279,10 @@ development: &dev
 test:
   <<: *default
   database: yml_test
+
+cache:
+  <<: *default
+  database: yml_development_cache
 EOF
 "$MRSK_BIN" new -d lookup/yml
 grep -q '^postgresql://dev:p%40ss%2Fw0rd@localhost:5433/postgres$' "$PSQL_LOG"
@@ -285,6 +291,22 @@ grep -q '^DATABASE_URL=postgresql://dev:p%40ss%2Fw0rd@localhost:5433/yml_develop
     "$project/lookup-yml/.env"
 "$MRSK_BIN" remove lookup/yml
 grep -q 'DROP DATABASE IF EXISTS "yml_development_lookup_yml"' "$PSQL_LOG"
+
+"$MRSK_BIN" new lookup/kept
+"$MRSK_BIN" new lookup/gone
+rm -rf "$project/lookup-gone"
+printf '%s\n' yml_development yml_test yml_development_cache other_development_x \
+    yml_development_lookup_kept yml_development_lookup_gone yml_development_old > "$PSQL_DATABASES"
+drops=$(grep -c 'DROP DATABASE' "$PSQL_LOG")
+"$MRSK_BIN" prune > "$tmp/prune.out" 2> "$tmp/prune.err"
+test "$(cat "$tmp/prune.out")" = "$(printf 'yml_development_lookup_gone\nyml_development_old')"
+grep -q "prune --force" "$tmp/prune.err"
+test "$(grep -c 'DROP DATABASE' "$PSQL_LOG")" = "$drops"
+"$MRSK_BIN" prune --force
+test "$(grep -c 'DROP DATABASE' "$PSQL_LOG")" = "$((drops + 2))"
+grep -q 'DROP DATABASE IF EXISTS "yml_development_lookup_gone"' "$PSQL_LOG"
+grep -q 'DROP DATABASE IF EXISTS "yml_development_old"' "$PSQL_LOG"
+"$MRSK_BIN" remove lookup/kept
 
 mono="$tmp/mono"
 mkdir -p "$mono/main/front-end" "$mono/main/back-end/config" "$mono/main/back-end/db/migrate" \

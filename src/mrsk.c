@@ -75,6 +75,7 @@ static void usage(FILE *stream)
             "  mrsk [<project>] updater <start|stop|status|run>\n"
             "  mrsk [<project>] bump-migration-version\n"
             "  mrsk [<project>] dbst [--full]\n"
+            "  mrsk [<project>] prune [--force]\n"
             "  mrsk [<project>] list\n");
 }
 
@@ -2618,6 +2619,140 @@ static int command_list(Project *project, int argc, char **argv)
     return result;
 }
 
+static bool mentions(const char *text, const char *name)
+{
+    size_t length = strlen(name);
+    for (const char *at = text; text != NULL && (at = strstr(at, name)) != NULL; at++) {
+        unsigned char before = at == text ? ' ' : (unsigned char)at[-1];
+        unsigned char after = (unsigned char)at[length];
+        if (!isalnum(before) && before != '_' && !isalnum(after) && after != '_') {
+            return true;
+        }
+    }
+    return false;
+}
+
+static int command_prune(Project *project, int argc, char **argv)
+{
+    bool force = argc == 1 && strcmp(argv[0], "--force") == 0;
+    if (argc != (force ? 1 : 0)) {
+        usage(stderr);
+        return 2;
+    }
+
+    char *rails = rails_path(project, project->project_root);
+    char *url = rails != NULL ? project_database_url(rails) : NULL;
+    char *yml_path = rails != NULL ? join_path(rails, "config/database.yml") : NULL;
+    FILE *yml = yml_path != NULL ? fopen(yml_path, "r") : NULL;
+    char *config = NULL;
+    size_t config_size = 0;
+    char *kept = NULL;
+    size_t kept_size = 0;
+    FILE *keep = open_memstream(&kept, &kept_size);
+    FILE *output = tmpfile();
+    char *line = NULL;
+    size_t capacity = 0;
+    size_t found = 0;
+    int status = 1;
+    const char *database;
+    size_t length;
+    if (url == NULL || url_database(url, &database, &length) != 0) {
+        fprintf(stderr, "mrsk: no development database found in DATABASE_URL, .env or config/database.yml\n");
+        goto done;
+    }
+    if (keep == NULL || output == NULL) {
+        fprintf(stderr, "mrsk: out of memory\n");
+        goto done;
+    }
+    // ponytail: names in database.yml (Rails 8 app_development_cache etc.) are never orphans
+    if (yml != NULL && getdelim(&config, &config_size, '\0', yml) == -1) {
+        free(config);
+        config = NULL;
+    }
+
+    char *const worktrees[] = {
+        "git", "-C", project->project_root, "worktree", "list", "--porcelain", "-z", NULL
+    };
+    status = run_process_with_output(worktrees, false, output);
+    if (status != 0) {
+        goto done;
+    }
+    rewind(output);
+    while (getdelim(&line, &capacity, '\0', output) != -1) {
+        // A worktree whose folder was deleted but not yet pruned by git counts as gone.
+        if (strncmp(line, "worktree ", 9) == 0 && access(line + 9, F_OK) == 0) {
+            char *name = own_database_name(url, line + 9);
+            if (name != NULL) {
+                fprintf(keep, "%s\n", name);
+            }
+            free(name);
+        }
+    }
+    fflush(keep);
+
+    rewind(output);
+    if (ftruncate(fileno(output), 0) != 0) {
+        fprintf(stderr, "mrsk: cannot reuse temporary file: %s\n", strerror(errno));
+        status = 1;
+        goto done;
+    }
+    char *admin = url_with_database(url, "postgres");
+    if (admin == NULL) {
+        status = 1;
+        goto done;
+    }
+    char *const psql[] = {
+        "psql", admin, "-X", "-q", "-A", "-t", "-v", "ON_ERROR_STOP=1",
+        "-c", "SELECT datname FROM pg_database", NULL
+    };
+    status = run_process_with_output(psql, false, output);
+    free(admin);
+    if (status != 0) {
+        goto done;
+    }
+    rewind(output);
+    while (getline(&line, &capacity, output) != -1) {
+        line[strcspn(line, "\r\n")] = '\0';
+        if (strncmp(line, database, length) != 0 || line[length] != '_' ||
+            strchr(line, '"') != NULL || mentions(kept, line) || mentions(config, line)) {
+            continue;
+        }
+        found++;
+        if (!force) {
+            printf("%s\n", line);
+            continue;
+        }
+        char sql[512];
+        snprintf(sql, sizeof(sql), "DROP DATABASE IF EXISTS \"%s\"", line);
+        if (run_database_sql(url, sql) == 0) {
+            printf("Removed database %s\n", line);
+        } else {
+            status = 1;
+        }
+    }
+    if (found > 0 && !force) {
+        fprintf(stderr, "mrsk: run 'mrsk prune --force' to drop these databases\n");
+    }
+
+done:
+    if (yml != NULL) {
+        fclose(yml);
+    }
+    if (keep != NULL) {
+        fclose(keep);
+    }
+    if (output != NULL) {
+        fclose(output);
+    }
+    free(kept);
+    free(config);
+    free(line);
+    free(yml_path);
+    free(url);
+    free(rails);
+    return status;
+}
+
 static int command_bump_migration_version(Project *project, int argc, char **argv)
 {
     (void)argv;
@@ -3132,6 +3267,7 @@ int main(int argc, char **argv)
         {"list", command_list},
         {"bump-migration-version", command_bump_migration_version},
         {"dbst", command_dbst},
+        {"prune", command_prune},
     };
     const size_t command_count = sizeof(commands) / sizeof(commands[0]);
     const CommandEntry shortcut = {NULL, command_switch};
