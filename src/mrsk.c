@@ -71,7 +71,7 @@ static void usage(FILE *stream)
             "  mrsk [<project>] new [-d|--database] <branch>\n"
             "  mrsk [<project>] open <branch-or-folder>\n"
             "  mrsk [<project>] remove [--force] <branch-or-folder>\n"
-            "  mrsk [<project>] delete_all [--force]\n"
+            "  mrsk [<project>] delete_all [--force] [--merged]\n"
             "  mrsk [<project>] updater <start|stop|status|run>\n"
             "  mrsk [<project>] bump-migration-version\n"
             "  mrsk [<project>] dbst [--full]\n"
@@ -2454,10 +2454,17 @@ static bool protected_branch(const char *branch)
 
 static int command_delete_all(Project *project, int argc, char **argv)
 {
-    bool force = argc == 1 && strcmp(argv[0], "--force") == 0;
-    if (argc != 0 && !force) {
-        usage(stderr);
-        return 2;
+    bool force = false;
+    bool merged = false;
+    for (int i = 0; i < argc; i++) {
+        if (strcmp(argv[i], "--force") == 0 && !force) {
+            force = true;
+        } else if (strcmp(argv[i], "--merged") == 0 && !merged) {
+            merged = true;
+        } else {
+            usage(stderr);
+            return 2;
+        }
     }
 
     char main_path[PATH_MAX];
@@ -2495,7 +2502,19 @@ static int command_delete_all(Project *project, int argc, char **argv)
             free(branch);
             branch = strdup(entry + 18);
         } else if (*entry == '\0' && path != NULL) {
-            if (strcmp(path, main_path) != 0 && !protected_branch(branch)) {
+            bool skip = strcmp(path, main_path) == 0 || protected_branch(branch);
+            if (!skip && merged) {
+                // ponytail: same notion as `git branch --merged`, so squash merges are kept.
+                skip = true;
+                if (branch != NULL) {
+                    char *const ancestor[] = {
+                        "git", "-C", project->project_root, "merge-base", "--is-ancestor",
+                        branch, project->main_branch, NULL
+                    };
+                    skip = run_process(ancestor, true) != 0;
+                }
+            }
+            if (!skip) {
                 status = remove_worktree(project, path, force);
                 if (status == 0) {
                     if (branch != NULL) {

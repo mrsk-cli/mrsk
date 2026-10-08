@@ -295,7 +295,7 @@ remains valid for a single project.
 | `mrsk [project] new [-d] <branch>` | Create a sibling worktree; optionally copy the development database |
 | `mrsk [project] list` | List registered worktrees and database/migration state |
 | `mrsk [project] remove [--force] <branch>` | Remove one worktree, keeping its branch |
-| `mrsk [project] delete_all [--force]` | Remove other worktrees **and their local branches**; see [deletion details](#worktrees) |
+| `mrsk [project] delete_all [--force] [--merged]` | Remove other worktrees **and their local branches**; see [deletion details](#worktrees) |
 | `mrsk 2491` or `mrsk DEV-2491` | Create or enter a task worktree with the [zsh hook](#shell-shortcuts); accepts `-d` |
 | `mrsk review [options]` | Review changes, a branch range, or a commit with [open-code-review](#ai-review) |
 | `mrsk rails-schema-confl` | Resolve a standard Rails schema version conflict |
@@ -361,6 +361,9 @@ registered worktree and its checked-out local branch. It also refuses dirty
 worktrees unless `--force` is explicitly supplied. Set
 `GIT_PROTECTED_BRANCHES` to comma- or whitespace-separated branch names whose
 worktrees and local branches must be preserved.
+`--merged` limits `delete_all` to worktrees whose branch is already merged into
+`main_branch` (the same check as `git branch --merged`). Squash-merged or
+rebased branches are not detected and stay.
 
 ### Shell shortcuts
 

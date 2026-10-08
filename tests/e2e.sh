@@ -167,6 +167,15 @@ HOME="$HOME" PROJECT="$project" zsh -c '
 '
 "$MRSK_BIN" example_project remove DEV-2491
 
+"$MRSK_BIN" example_project new merged/one
+"$MRSK_BIN" example_project new merged/two
+git -C "$project/merged-two" commit --quiet --allow-empty -m unmerged
+"$MRSK_BIN" example_project delete_all --merged
+test ! -e "$project/merged-one"
+! git -C "$project/rebuild" show-ref --verify --quiet refs/heads/merged/one
+test -d "$project/merged-two"
+"$MRSK_BIN" example_project remove merged-two
+
 "$MRSK_BIN" example_project new delete/one
 "$MRSK_BIN" example_project new delete/two
 GIT_PROTECTED_BRANCHES="delete/two,other" "$MRSK_BIN" example_project delete_all
