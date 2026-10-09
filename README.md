@@ -31,7 +31,7 @@ The core CLI is written in POSIX C and runs on macOS and Linux.
 | AI review | `ocr`, Git 2.41 or newer, and an LLM provider and model configured for a full review |
 | Build from source | Make, a C11 compiler, and Go 1.25.5 or newer for the bundled `ocr` |
 | Run the test suite | Build tools above, zsh, and Ruby; run as a regular user |
-| Extra commands | Vim for `configure`; Ruby for Rails migration helpers; `psql` for database features; `xdg-open` for `redmine` on Linux |
+| Extra commands | Vim for `configure`; Ruby for Rails migration helpers and `redmine --show`; `psql` for database features; `xdg-open` for `redmine` on Linux |
 | macOS-only commands | `open` uses Terminal; `updater` uses launchd and may run Bundler and Rails |
 
 Homebrew and APT install the review helper too. APT requires Git 2.41 or newer
@@ -302,7 +302,7 @@ remains valid for a single project.
 | `mrsk rails-schema-confl` | Resolve a standard Rails schema version conflict |
 | `mrsk bump-migration-version` | Re-timestamp migrations added by the branch |
 | `mrsk dbst [--full]` | Show migration status; the default is the last 20 migrations |
-| `mrsk redmine` | Open the current branch's issue in the browser |
+| `mrsk redmine [--show]` | Open the current branch's issue in the browser, or print its title and description |
 | `mrsk [project] open <branch>` | Open the worktree in macOS Terminal |
 | `mrsk [project] updater <action>` | Manage the [macOS updater](#macos-updater) |
 
@@ -457,6 +457,11 @@ IDs of migrations whose files are not on that upstream yet are shown in yellow.
 the issue number at the end of the current branch name. For example, branch
 `DEV-3454` opens `https://redmine.example.com/issues/3454`. When `redmine_url`
 has no scheme, `https://` is used.
+
+`redmine --show` prints the issue's title, a blank line, and its description
+instead of opening the browser. It reads `<redmine_url>/issues/<number>.json`
+through Ruby, so the Redmine REST API must be enabled. When Redmine needs a
+login, set `REDMINE_API_KEY` to your API key (shown under **My account**).
 
 ### macOS updater
 
