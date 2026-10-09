@@ -265,6 +265,9 @@ projects:
       - config/master.key
     copy_folders:
       - storage
+    databases:
+      - development
+      - test
   - project_name: another_project
     project_root: /home/you/projects/another_project/main
     main_branch: main
@@ -282,9 +285,11 @@ that does.
 `copy_files` and `copy_folders` are optional relative paths copied from the main
 checkout after `new` creates a worktree. A missing `copy_folders` path is skipped
 with a yellow warning; a missing `copy_files` path stops `new` before the
-worktree is created. The parser deliberately supports only this YAML subset,
-avoiding a YAML dependency. The old flat `project_root` and `main_branch` format
-remains valid for a single project.
+worktree is created. `databases` lists which databases `new -d` copies:
+`development`, `test`, or both; without it only `development` is copied.
+The parser deliberately supports only this YAML subset, avoiding a YAML
+dependency. The old flat `project_root` and `main_branch` format remains valid
+for a single project.
 
 ## Commands
 
@@ -292,7 +297,7 @@ remains valid for a single project.
 | --- | --- |
 | `mrsk configure` | Edit the configuration in Vim |
 | `mrsk clone https://github.com/basecamp/fizzy` | Clone a GitHub repository and register the project; SSH URLs work too |
-| `mrsk [project] new [-d] <branch>` | Create a sibling worktree; optionally copy the development database |
+| `mrsk [project] new [-d] <branch>` | Create a sibling worktree; optionally copy its databases |
 | `mrsk [project] list` | List registered worktrees and database/migration state |
 | `mrsk [project] remove [--force] <branch>` | Remove one worktree, keeping its branch |
 | `mrsk [project] delete_all [--force] [--merged]` | Remove other worktrees **and their local branches**; see [deletion details](#worktrees) |
@@ -406,12 +411,22 @@ root (see `rails_root`). It runs
 `CREATE DATABASE "<db>_<worktree-name>" TEMPLATE "<db>"` through `psql`, and
 rewrites `DATABASE_URL` in the worktree's `.env` to point at the copy. The template copy fails while the source database has active
 connections, so stop Rails servers on the main checkout first. `remove` and
-`delete_all` drop a worktree's own database after the worktree is removed, and
+`delete_all` drop a worktree's own databases after the worktree is removed, and
 `list` marks such worktrees with `[database: <name>]`.
 
+With `test` in the project's `databases` list, `new -d` also copies the test
+database, so tests in each worktree run in isolation. Its source is
+`DATABASE_URL` in the main checkout's `.env.test`, then the `test` section of
+`config/database.yml`, and the copy is written to `DATABASE_URL` in the
+worktree's `.env.test`, which dotenv loads before `.env` in the test
+environment. Keep `.env.test` out of Git like `.env`. If one copy fails, the
+copies made by that run are dropped. For a worktree that already exists,
+`mrsk <number> -d` adds only the copies it is missing.
+
 A worktree deleted another way (`git worktree remove`, `rm -rf`) leaves its
-database behind. `prune` lists every `<db>_*` database whose worktree folder no
-longer exists, and `prune --force` drops them. Names that appear in the main
+databases behind. `prune` lists every `<db>_*` database, for each source
+database in `databases`, whose worktree folder no longer exists, and
+`prune --force` drops them. Names that appear in the main
 checkout's `config/database.yml` (such as Rails 8's `<db>_cache`) are never
 listed.
 
