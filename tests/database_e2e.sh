@@ -29,7 +29,7 @@ export PATH
 git -C "$project/main" init -q -b main
 git -C "$project/main" config user.name Test
 git -C "$project/main" config user.email test@example.com
-printf '.env\ntmp/\n' > "$project/main/.gitignore"
+printf '.env\n.env.test\ntmp/\n' > "$project/main/.gitignore"
 printf 'KEY=value\nDATABASE_URL=postgresql://postgres:postgres@localhost:5400/app_development\n' \
     > "$project/main/.env"
 mkdir -p "$project/main/bin" "$project/main/db/migrate"
@@ -252,7 +252,7 @@ if "$MRSK_BIN" new -d lookup/none 2>"$tmp/none.out"; then
     echo "expected new -d to fail without a database" >&2
     exit 1
 fi
-grep -q 'needs a database name in DATABASE_URL' "$tmp/none.out"
+grep -q 'needs a development database name in DATABASE_URL' "$tmp/none.out"
 test ! -e "$project/lookup-none"
 
 DATABASE_URL=postgresql://env@localhost/env_development "$MRSK_BIN" new -d lookup/env
@@ -307,6 +307,49 @@ test "$(grep -c 'DROP DATABASE' "$PSQL_LOG")" = "$((drops + 2))"
 grep -q 'DROP DATABASE IF EXISTS "yml_development_lookup_gone"' "$PSQL_LOG"
 grep -q 'DROP DATABASE IF EXISTS "yml_development_old"' "$PSQL_LOG"
 "$MRSK_BIN" remove lookup/kept
+
+cat > "$HOME/.mrsk/config.yml" <<EOF
+project_root: "$project/main"
+main_branch: main
+databases:
+  - development
+  - test
+EOF
+"$MRSK_BIN" new -d both/dbs
+grep -q 'CREATE DATABASE "yml_development_both_dbs" TEMPLATE "yml_development"' "$PSQL_LOG"
+grep -q 'CREATE DATABASE "yml_test_both_dbs" TEMPLATE "yml_test"' "$PSQL_LOG"
+grep -q '^DATABASE_URL=postgresql://dev:p%40ss%2Fw0rd@localhost:5433/yml_test_both_dbs$' \
+    "$project/both-dbs/.env.test"
+"$MRSK_BIN" list | grep 'both-dbs' |
+    grep -q '\[database: yml_development_both_dbs\] \[database: yml_test_both_dbs\]'
+printf '%s\n' yml_development yml_test yml_test_both_dbs yml_test_old > "$PSQL_DATABASES"
+test "$("$MRSK_BIN" prune 2>/dev/null)" = yml_test_old
+"$MRSK_BIN" remove both/dbs
+grep -q 'DROP DATABASE IF EXISTS "yml_development_both_dbs"' "$PSQL_LOG"
+grep -q 'DROP DATABASE IF EXISTS "yml_test_both_dbs"' "$PSQL_LOG"
+
+printf 'DATABASE_URL=postgresql://dev@localhost/app_broken\n' > "$project/main/.env.test"
+if "$MRSK_BIN" new -d both/fail 2>"$tmp/both-fail.out"; then
+    echo "expected failed test database copy to fail" >&2
+    exit 1
+fi
+grep -q 'CREATE DATABASE "app_broken_both_fail" TEMPLATE "app_broken"' "$PSQL_LOG"
+grep -q 'DROP DATABASE IF EXISTS "yml_development_both_fail"' "$PSQL_LOG"
+grep -q 'rolled back' "$tmp/both-fail.out"
+test ! -e "$project/both-fail"
+rm "$project/main/.env.test"
+
+cat > "$HOME/.mrsk/config.yml" <<EOF
+project_root: "$project/main"
+main_branch: main
+databases:
+  - staging
+EOF
+if "$MRSK_BIN" list 2>"$tmp/databases.out"; then
+    echo "expected unknown databases entry to fail" >&2
+    exit 1
+fi
+grep -q "databases can list development and test, not 'staging'" "$tmp/databases.out"
 
 mono="$tmp/mono"
 mkdir -p "$mono/main/front-end" "$mono/main/back-end/config" "$mono/main/back-end/db/migrate" \

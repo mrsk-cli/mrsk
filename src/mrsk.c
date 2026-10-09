@@ -27,10 +27,21 @@ typedef struct {
     char *main_branch;
     char *prefix;
     char *rails_root;
+    unsigned databases;
     bool default_project;
     CopyPath *copy_paths;
     size_t copy_path_count;
 } Project;
+
+// Rails environments `new -d` can clone, and the dotenv file that points a worktree at its copy.
+typedef struct {
+    const char *name;
+    const char *env_file;
+} DatabaseEnv;
+
+static const DatabaseEnv database_envs[] = {{"development", ".env"}, {"test", ".env.test"}};
+enum { DATABASE_ENV_COUNT = sizeof(database_envs) / sizeof(database_envs[0]) };
+static const DatabaseEnv *const development = &database_envs[0];
 
 typedef enum {
     CONFIG_NEW,
@@ -178,6 +189,27 @@ static int add_copy_path(Project *project, char *value, bool folder)
     return 0;
 }
 
+static int add_database(Project *project, const char *value, const char *path,
+                        unsigned long line_number)
+{
+    for (int i = 0; i < DATABASE_ENV_COUNT; i++) {
+        if (strcmp(value, database_envs[i].name) == 0) {
+            project->databases |= 1u << i;
+            return 0;
+        }
+    }
+    fprintf(stderr, "mrsk: %s:%lu: databases can list development and test, not '%s'\n",
+            path, line_number, value);
+    return 1;
+}
+
+// Without a databases list, `new -d` clones only the development database.
+static bool clones_database(const Project *project, const DatabaseEnv *env)
+{
+    unsigned databases = project->databases != 0 ? project->databases : 1u;
+    return (databases & (1u << (env - database_envs))) != 0;
+}
+
 static bool valid_copy_path(const char *path)
 {
     if (*path == '\0' || *path == '/') {
@@ -240,8 +272,7 @@ static int load_config(Config *config, bool allow_absent)
     bool projects_list = false;
     bool content = false;
     Project *project = NULL;
-    bool copy_list = false;
-    bool copy_folders = false;
+    enum { NO_LIST, COPY_FILES, COPY_FOLDERS, DATABASES } list = NO_LIST;
     while (fgets(line, sizeof(line), file) != NULL) {
         line_number++;
         if (strchr(line, '\n') == NULL && !feof(file)) {
@@ -294,15 +325,18 @@ static int load_config(Config *config, bool allow_absent)
         }
 
         size_t list_indentation = projects_list ? 6 : 2;
-        if (copy_list && indentation == list_indentation &&
+        if (list != NO_LIST && indentation == list_indentation &&
             strncmp(entry, "- ", 2) == 0) {
-            if (add_copy_path(project, entry + 2, copy_folders) != 0) {
+            int status = list == DATABASES ?
+                         add_database(project, trim(entry + 2), path, line_number) :
+                         add_copy_path(project, entry + 2, list == COPY_FOLDERS);
+            if (status != 0) {
                 fclose(file);
                 return 1;
             }
             continue;
         }
-        copy_list = false;
+        list = NO_LIST;
 
         if (projects_list && indentation == 2 && strncmp(entry, "- ", 2) == 0) {
             project = add_project(config);
@@ -341,15 +375,16 @@ static int load_config(Config *config, bool allow_absent)
             }
         }
 
-        if (strcmp(key, "copy_files") == 0 || strcmp(key, "copy_folders") == 0) {
+        if (strcmp(key, "copy_files") == 0 || strcmp(key, "copy_folders") == 0 ||
+            strcmp(key, "databases") == 0) {
             if (*value != '\0') {
                 fprintf(stderr, "mrsk: %s:%lu: expected a list below '%s'\n",
                         path, line_number, key);
                 fclose(file);
                 return 1;
             }
-            copy_list = true;
-            copy_folders = strcmp(key, "copy_folders") == 0;
+            list = strcmp(key, "databases") == 0 ? DATABASES :
+                   strcmp(key, "copy_folders") == 0 ? COPY_FOLDERS : COPY_FILES;
             continue;
         }
         if (strcmp(key, "default") == 0) {
@@ -1003,6 +1038,15 @@ static int write_project(FILE *file, const Project *project)
     if (project->default_project && fputs("    default: true\n", file) == EOF) {
         return 1;
     }
+    if (project->databases != 0 && fputs("    databases:\n", file) == EOF) {
+        return 1;
+    }
+    for (int i = 0; i < DATABASE_ENV_COUNT; i++) {
+        if ((project->databases & (1u << i)) != 0 &&
+            fprintf(file, "      - %s\n", database_envs[i].name) < 0) {
+            return 1;
+        }
+    }
     return write_copy_paths(file, project, false) || write_copy_paths(file, project, true);
 }
 
@@ -1474,9 +1518,9 @@ static char *rails_path(const Project *project, const char *checkout)
     return result != NULL ? result : strdup(checkout);
 }
 
-static char *read_env_database_url(const char *dir)
+static char *read_env_database_url(const char *dir, const char *env_file)
 {
-    char *path = join_path(dir, ".env");
+    char *path = join_path(dir, env_file);
     if (path == NULL) {
         return NULL;
     }
@@ -1581,7 +1625,7 @@ static void put_escaped(FILE *output, const char *text)
     }
 }
 
-static char *read_database_yml_url(const char *dir)
+static char *read_database_yml_url(const char *dir, const char *section)
 {
     char *path = join_path(dir, "config/database.yml");
     if (path == NULL) {
@@ -1595,7 +1639,7 @@ static char *read_database_yml_url(const char *dir)
 
     char *values[YML_KEY_COUNT] = {0};
     char *merge = NULL;
-    read_yml_section(file, "development", NULL, values, &merge);
+    read_yml_section(file, section, NULL, values, &merge);
     if (merge != NULL) {
         read_yml_section(file, "", merge, values, NULL);
         free(merge);
@@ -1641,14 +1685,14 @@ static char *read_database_yml_url(const char *dir)
     return url;
 }
 
-static char *project_database_url(const char *dir)
+static char *project_database_url(const char *dir, const DatabaseEnv *env)
 {
-    const char *env = getenv("DATABASE_URL");
-    if (env != NULL && *env != '\0') {
-        return strdup(env);
+    const char *variable = getenv("DATABASE_URL");
+    if (env == development && variable != NULL && *variable != '\0') {
+        return strdup(variable);
     }
-    char *url = read_env_database_url(dir);
-    return url != NULL ? url : read_database_yml_url(dir);
+    char *url = read_env_database_url(dir, env->env_file);
+    return url != NULL ? url : read_database_yml_url(dir, env->name);
 }
 
 static int url_database(const char *url, const char **name, size_t *length)
@@ -1722,9 +1766,9 @@ static int run_database_sql(const char *url, const char *sql)
     return status;
 }
 
-static int rewrite_env_database(const char *dir, const char *url)
+static int rewrite_env_database(const char *dir, const char *env_file, const char *url)
 {
-    char *path = join_path(dir, ".env");
+    char *path = join_path(dir, env_file);
     if (path == NULL) {
         return 1;
     }
@@ -1777,13 +1821,30 @@ static int rewrite_env_database(const char *dir, const char *url)
     return status;
 }
 
-static int create_worktree_database(const Project *project, const char *worktree)
+static int drop_database(const char *url, const char *name)
+{
+    size_t length = strlen("DROP DATABASE IF EXISTS \"\"") + strlen(name) + 1;
+    char *sql = malloc(length);
+    if (sql == NULL) {
+        fprintf(stderr, "mrsk: out of memory\n");
+        return 1;
+    }
+    snprintf(sql, length, "DROP DATABASE IF EXISTS \"%s\"", name);
+    int status = run_database_sql(url, sql);
+    if (status == 0) {
+        printf("Removed database %s\n", name);
+    }
+    free(sql);
+    return status;
+}
+
+static int copy_database(const Project *project, const char *worktree, const DatabaseEnv *env)
 {
     char *main_rails = rails_path(project, project->project_root);
-    char *url = main_rails != NULL ? project_database_url(main_rails) : NULL;
+    char *url = main_rails != NULL ? project_database_url(main_rails, env) : NULL;
     if (url == NULL) {
-        fprintf(stderr, "mrsk: no DATABASE_URL in the environment, %s/.env, or config/database.yml\n",
-                main_rails != NULL ? main_rails : project->project_root);
+        fprintf(stderr, "mrsk: no %s database in DATABASE_URL, %s/%s, or config/database.yml\n",
+                env->name, main_rails != NULL ? main_rails : project->project_root, env->env_file);
         free(main_rails);
         return 1;
     }
@@ -1815,7 +1876,7 @@ static int create_worktree_database(const Project *project, const char *worktree
                 worktree_url = url_with_database(url, name);
                 char *rails = rails_path(project, worktree);
                 status = worktree_url != NULL && rails != NULL ?
-                         rewrite_env_database(rails, worktree_url) : 1;
+                         rewrite_env_database(rails, env->env_file, worktree_url) : 1;
                 free(rails);
                 if (status != 0) {
                     snprintf(sql, sql_length, "DROP DATABASE IF EXISTS \"%s\"", name);
@@ -1835,16 +1896,17 @@ static int create_worktree_database(const Project *project, const char *worktree
     return status;
 }
 
-static char *worktree_own_database(const Project *project, const char *path)
+static char *worktree_own_database(const Project *project, const char *path,
+                                   const DatabaseEnv *env)
 {
     char *rails = rails_path(project, path);
-    char *worktree_url = rails != NULL ? read_env_database_url(rails) : NULL;
+    char *worktree_url = rails != NULL ? read_env_database_url(rails, env->env_file) : NULL;
     free(rails);
     if (worktree_url == NULL) {
         return NULL;
     }
     rails = rails_path(project, project->project_root);
-    char *main_url = rails != NULL ? project_database_url(rails) : NULL;
+    char *main_url = rails != NULL ? project_database_url(rails, env) : NULL;
     free(rails);
     char *expected = main_url != NULL ? own_database_name(main_url, path) : NULL;
 
@@ -1954,6 +2016,47 @@ static void start_background_migration(const Project *project, const char *check
     }
     printf("Migrating in background (log: %s/tmp/mrsk-migrate.log)\n", worktree);
     free(worktree);
+}
+
+static void drop_worktree_database(const Project *project, const char *worktree,
+                                   const DatabaseEnv *env)
+{
+    char *rails = rails_path(project, worktree);
+    char *url = rails != NULL ? read_env_database_url(rails, env->env_file) : NULL;
+    char *name = worktree_own_database(project, worktree, env);
+    if (url != NULL && name != NULL) {
+        drop_database(url, name);
+    }
+    free(name);
+    free(url);
+    free(rails);
+}
+
+// Copies each configured database the worktree does not have yet; a failure drops the copies made here.
+static int create_worktree_databases(const Project *project, const char *worktree)
+{
+    unsigned created = 0;
+    int status = 0;
+    for (int i = 0; i < DATABASE_ENV_COUNT && status == 0; i++) {
+        if (!clones_database(project, &database_envs[i])) {
+            continue;
+        }
+        char *existing = worktree_own_database(project, worktree, &database_envs[i]);
+        if (existing == NULL) {
+            status = copy_database(project, worktree, &database_envs[i]);
+            created |= status == 0 ? 1u << i : 0;
+        }
+        free(existing);
+    }
+    for (int i = 0; i < DATABASE_ENV_COUNT && status != 0; i++) {
+        if ((created & (1u << i)) != 0) {
+            drop_worktree_database(project, worktree, &database_envs[i]);
+        }
+    }
+    if (status == 0 && (created & 1u) != 0 && has_new_migrations(project, worktree)) {
+        start_background_migration(project, worktree);
+    }
+    return status;
 }
 
 static const char *migration_status(const char *path)
@@ -2212,15 +2315,19 @@ static int create_worktree(Project *project, const char *branch, bool database)
         free(path);
         return 1;
     }
-    if (database) {
+    for (int i = 0; database && i < DATABASE_ENV_COUNT; i++) {
+        const DatabaseEnv *env = &database_envs[i];
+        if (!clones_database(project, env)) {
+            continue;
+        }
         char *rails = rails_path(project, project->project_root);
-        char *url = rails != NULL ? project_database_url(rails) : NULL;
+        char *url = rails != NULL ? project_database_url(rails, env) : NULL;
         const char *name;
         size_t length;
         if (url == NULL || url_database(url, &name, &length) != 0) {
             fprintf(stderr,
-                    "mrsk: --database needs a database name in DATABASE_URL, %s/.env, or config/database.yml\n",
-                    rails != NULL ? rails : project->project_root);
+                    "mrsk: --database needs a %s database name in DATABASE_URL, %s/%s, or config/database.yml\n",
+                    env->name, rails != NULL ? rails : project->project_root, env->env_file);
             free(rails);
             free(url);
             free(path);
@@ -2256,10 +2363,7 @@ static int create_worktree(Project *project, const char *branch, bool database)
         status = copy_project_paths(project, path);
     }
     if (status == 0 && database) {
-        status = create_worktree_database(project, path);
-        if (status == 0 && has_new_migrations(project, path)) {
-            start_background_migration(project, path);
-        }
+        status = create_worktree_databases(project, path);
     }
     if (status == 0) {
         printf("Created %s\n", path);
@@ -2332,14 +2436,7 @@ static int command_switch(Project *project, int argc, char **argv)
     if (access(path, F_OK) != 0) {
         status = create_worktree(project, branch, database);
     } else if (database) {
-        char *existing = worktree_own_database(project, path);
-        if (existing == NULL) {
-            status = create_worktree_database(project, path);
-            if (status == 0 && has_new_migrations(project, path)) {
-                start_background_migration(project, path);
-            }
-        }
-        free(existing);
+        status = create_worktree_databases(project, path);
     }
     if (status == 0) {
         printf("%s\n", path);
@@ -2379,9 +2476,15 @@ static int command_open(Project *project, int argc, char **argv)
 
 static int remove_worktree(Project *project, const char *path, bool force)
 {
-    char *database = worktree_own_database(project, path);
-    char *rails = database != NULL ? rails_path(project, path) : NULL;
-    char *url = rails != NULL ? read_env_database_url(rails) : NULL;
+    // Read before the worktree, and its env files, are gone.
+    char *databases[DATABASE_ENV_COUNT];
+    char *urls[DATABASE_ENV_COUNT];
+    char *rails = rails_path(project, path);
+    for (int i = 0; i < DATABASE_ENV_COUNT; i++) {
+        databases[i] = worktree_own_database(project, path, &database_envs[i]);
+        urls[i] = databases[i] != NULL && rails != NULL ?
+                  read_env_database_url(rails, database_envs[i].env_file) : NULL;
+    }
     free(rails);
 
     char *normal[] = {
@@ -2396,23 +2499,15 @@ static int remove_worktree(Project *project, const char *path, bool force)
         printf("Removed %s\n", path);
     }
 
-    if (status == 0 && database != NULL && url != NULL) {
-        size_t length = strlen("DROP DATABASE IF EXISTS \"\"") + strlen(database) + 1;
-        char *sql = malloc(length);
-        if (sql == NULL) {
-            fprintf(stderr, "mrsk: out of memory\n");
+    bool removed = status == 0;
+    for (int i = 0; i < DATABASE_ENV_COUNT; i++) {
+        if (removed && databases[i] != NULL && urls[i] != NULL &&
+            drop_database(urls[i], databases[i]) != 0) {
             status = 1;
-        } else {
-            snprintf(sql, length, "DROP DATABASE IF EXISTS \"%s\"", database);
-            status = run_database_sql(url, sql);
-            if (status == 0) {
-                printf("Removed database %s\n", database);
-            }
-            free(sql);
         }
+        free(urls[i]);
+        free(databases[i]);
     }
-    free(url);
-    free(database);
     return status;
 }
 
@@ -2605,7 +2700,6 @@ static int command_list(Project *project, int argc, char **argv)
         } else if (strcmp(entry, "detached") == 0) {
             detached = true;
         } else if (*entry == '\0' && path != NULL) {
-            char *database = worktree_own_database(project, path);
             printf("%s", path);
             if (head != NULL) {
                 printf("  %.7s", head);
@@ -2615,8 +2709,12 @@ static int command_list(Project *project, int argc, char **argv)
             } else if (detached) {
                 printf(" (detached HEAD)");
             }
-            if (database != NULL) {
-                printf(" [database: %s]", database);
+            for (int i = 0; i < DATABASE_ENV_COUNT; i++) {
+                char *database = worktree_own_database(project, path, &database_envs[i]);
+                if (database != NULL) {
+                    printf(" [database: %s]", database);
+                }
+                free(database);
             }
             char *rails = rails_path(project, path);
             const char *migration = rails != NULL ? migration_status(rails) : NULL;
@@ -2625,7 +2723,6 @@ static int command_list(Project *project, int argc, char **argv)
                 printf(" [%s]", migration);
             }
             putchar('\n');
-            free(database);
             free(path);
             free(head);
             free(branch);
@@ -2664,16 +2761,10 @@ static bool mentions(const char *text, const char *name)
     return false;
 }
 
-static int command_prune(Project *project, int argc, char **argv)
+static int prune_databases(Project *project, const DatabaseEnv *env, bool force, size_t *found)
 {
-    bool force = argc == 1 && strcmp(argv[0], "--force") == 0;
-    if (argc != (force ? 1 : 0)) {
-        usage(stderr);
-        return 2;
-    }
-
     char *rails = rails_path(project, project->project_root);
-    char *url = rails != NULL ? project_database_url(rails) : NULL;
+    char *url = rails != NULL ? project_database_url(rails, env) : NULL;
     char *yml_path = rails != NULL ? join_path(rails, "config/database.yml") : NULL;
     FILE *yml = yml_path != NULL ? fopen(yml_path, "r") : NULL;
     char *config = NULL;
@@ -2681,15 +2772,16 @@ static int command_prune(Project *project, int argc, char **argv)
     char *kept = NULL;
     size_t kept_size = 0;
     FILE *keep = open_memstream(&kept, &kept_size);
+    char *sources[DATABASE_ENV_COUNT] = {0};
     FILE *output = tmpfile();
     char *line = NULL;
     size_t capacity = 0;
-    size_t found = 0;
     int status = 1;
     const char *database;
     size_t length;
     if (url == NULL || url_database(url, &database, &length) != 0) {
-        fprintf(stderr, "mrsk: no development database found in DATABASE_URL, .env or config/database.yml\n");
+        fprintf(stderr, "mrsk: no %s database found in DATABASE_URL, %s or config/database.yml\n",
+                env->name, env->env_file);
         goto done;
     }
     if (keep == NULL || output == NULL) {
@@ -2700,6 +2792,16 @@ static int command_prune(Project *project, int argc, char **argv)
     if (yml != NULL && getdelim(&config, &config_size, '\0', yml) == -1) {
         free(config);
         config = NULL;
+    }
+    // Every configured database is kept too: with app and app_test, app_test_x matches app_*.
+    for (int i = 0; i < DATABASE_ENV_COUNT; i++) {
+        const char *source;
+        size_t source_length;
+        sources[i] = clones_database(project, &database_envs[i]) ?
+                     project_database_url(rails, &database_envs[i]) : NULL;
+        if (sources[i] != NULL && url_database(sources[i], &source, &source_length) == 0) {
+            fprintf(keep, "%.*s\n", (int)source_length, source);
+        }
     }
 
     char *const worktrees[] = {
@@ -2712,8 +2814,11 @@ static int command_prune(Project *project, int argc, char **argv)
     rewind(output);
     while (getdelim(&line, &capacity, '\0', output) != -1) {
         // A worktree whose folder was deleted but not yet pruned by git counts as gone.
-        if (strncmp(line, "worktree ", 9) == 0 && access(line + 9, F_OK) == 0) {
-            char *name = own_database_name(url, line + 9);
+        if (strncmp(line, "worktree ", 9) != 0 || access(line + 9, F_OK) != 0) {
+            continue;
+        }
+        for (int i = 0; i < DATABASE_ENV_COUNT; i++) {
+            char *name = sources[i] != NULL ? own_database_name(sources[i], line + 9) : NULL;
             if (name != NULL) {
                 fprintf(keep, "%s\n", name);
             }
@@ -2749,21 +2854,14 @@ static int command_prune(Project *project, int argc, char **argv)
             strchr(line, '"') != NULL || mentions(kept, line) || mentions(config, line)) {
             continue;
         }
-        found++;
+        (*found)++;
         if (!force) {
             printf("%s\n", line);
             continue;
         }
-        char sql[512];
-        snprintf(sql, sizeof(sql), "DROP DATABASE IF EXISTS \"%s\"", line);
-        if (run_database_sql(url, sql) == 0) {
-            printf("Removed database %s\n", line);
-        } else {
+        if (drop_database(url, line) != 0) {
             status = 1;
         }
-    }
-    if (found > 0 && !force) {
-        fprintf(stderr, "mrsk: run 'mrsk prune --force' to drop these databases\n");
     }
 
 done:
@@ -2776,12 +2874,37 @@ done:
     if (output != NULL) {
         fclose(output);
     }
+    for (int i = 0; i < DATABASE_ENV_COUNT; i++) {
+        free(sources[i]);
+    }
     free(kept);
     free(config);
     free(line);
     free(yml_path);
     free(url);
     free(rails);
+    return status;
+}
+
+static int command_prune(Project *project, int argc, char **argv)
+{
+    bool force = argc == 1 && strcmp(argv[0], "--force") == 0;
+    if (argc != (force ? 1 : 0)) {
+        usage(stderr);
+        return 2;
+    }
+
+    size_t found = 0;
+    int status = 0;
+    for (int i = 0; i < DATABASE_ENV_COUNT; i++) {
+        if (clones_database(project, &database_envs[i]) &&
+            prune_databases(project, &database_envs[i], force, &found) != 0) {
+            status = 1;
+        }
+    }
+    if (found > 0 && !force) {
+        fprintf(stderr, "mrsk: run 'mrsk prune --force' to drop these databases\n");
+    }
     return status;
 }
 
@@ -2920,7 +3043,7 @@ static int command_bump_migration_version(Project *project, int argc, char **arg
         return 1;
     }
 
-    char *url = read_env_database_url(rails);
+    char *url = read_env_database_url(rails, ".env");
     free(rails);
     char *const command[] = {
         "ruby", "-e",
@@ -2987,7 +3110,7 @@ static int command_dbst(Project *project, int argc, char **argv)
     }
     char *rails = rails_path(project, checkout);
     free(checkout);
-    char *url = rails != NULL ? project_database_url(rails) : NULL;
+    char *url = rails != NULL ? project_database_url(rails, development) : NULL;
     char *migrate = rails != NULL ? join_path(rails, "db/migrate") : NULL;
     FILE *output = tmpfile();
     MigrationRow *rows = NULL;
