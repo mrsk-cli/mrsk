@@ -63,7 +63,7 @@ static void usage(FILE *stream)
             "Usage:\n"
             "  mrsk configure\n"
             "  mrsk clone <github-repository-url>\n"
-            "  mrsk redmine\n"
+            "  mrsk redmine [--show]\n"
             "  mrsk review [--from <base> --to <branch> | --commit <sha>]\n"
             "  mrsk rails-schema-confl\n"
             "  mrsk shell-init\n"
@@ -2019,9 +2019,10 @@ static bool numeric_name(const char *name)
     return *name != '\0' && strspn(name, "0123456789") == strlen(name);
 }
 
-static int command_redmine(const Config *config, int argc)
+static int command_redmine(const Config *config, int argc, char **argv)
 {
-    if (argc != 0) {
+    bool show = argc == 1 && strcmp(argv[0], "--show") == 0;
+    if (argc != 0 && !show) {
         usage(stderr);
         return 2;
     }
@@ -2078,12 +2079,27 @@ static int command_redmine(const Config *config, int argc)
     }
     snprintf(url, url_length, "%s%.*s/issues/%s",
              scheme, (int)base_length, config->redmine_url, issue);
+    char *const show_command[] = {
+        "ruby", "-rjson", "-rnet/http", "-e",
+        "uri = URI(\"#{ARGV[0]}.json\")\n"
+        "request = Net::HTTP::Get.new(uri)\n"
+        "request['X-Redmine-API-Key'] = ENV['REDMINE_API_KEY'] if ENV['REDMINE_API_KEY']\n"
+        "begin\n"
+        "  response = Net::HTTP.start(uri.host, uri.port, use_ssl: uri.scheme == 'https') { |http| http.request(request) }\n"
+        "rescue StandardError => error\n"
+        "  abort \"mrsk: cannot fetch #{uri}: #{error.message}\"\n"
+        "end\n"
+        "abort \"mrsk: #{uri} returned #{response.code}; set REDMINE_API_KEY if Redmine needs a login\" unless response.is_a?(Net::HTTPSuccess)\n"
+        "issue = JSON.parse(response.body)['issue']\n"
+        "puts issue['subject'], '', issue['description'].to_s.gsub(\"\\r\\n\", \"\\n\")\n",
+        url, NULL
+    };
 #ifdef __APPLE__
     char *const open_command[] = {"open", url, NULL};
 #else
     char *const open_command[] = {"xdg-open", url, NULL};
 #endif
-    status = run_process(open_command, false);
+    status = run_process(show ? show_command : open_command, false);
     free(url);
     free(branch);
     return status;
@@ -3277,7 +3293,7 @@ int main(int argc, char **argv)
             free_config(&config);
             return 1;
         }
-        int status = command_redmine(&config, argc - 2);
+        int status = command_redmine(&config, argc - 2, argv + 2);
         free_config(&config);
         return status;
     }

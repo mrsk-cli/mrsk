@@ -82,6 +82,42 @@ git -C "$project/rebuild" switch -qc DEV-3454
 (cd "$project/rebuild" && "$MRSK_BIN" redmine)
 test "$(cat "$OPEN_LOG")" = "https://redmine.example.test/issues/3454"
 
+ruby -rsocket -rjson -e '
+server = TCPServer.new("127.0.0.1", 0)
+File.write(ARGV[0], server.addr[1])
+abort "no request from mrsk" unless IO.select([server], nil, nil, 30)
+client = server.accept
+request = []
+while (line = client.gets) && line != "\r\n"
+  request << line
+end
+File.write(ARGV[1], request.join)
+body = {issue: {subject: "Fix login", description: "Steps:\r\n1. Sign in"}}.to_json
+client.write "HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nContent-Length: #{body.bytesize}\r\nConnection: close\r\n\r\n#{body}"
+client.close
+' "$tmp/redmine.port" "$tmp/redmine.request" &
+redmine_server=$!
+while [ ! -s "$tmp/redmine.port" ]; do sleep 0.1; done
+mkdir -p "$tmp/redmine-home/.mrsk"
+cat > "$tmp/redmine-home/.mrsk/config.yml" <<EOF
+redmine_url: http://127.0.0.1:$(cat "$tmp/redmine.port")
+projects:
+  - project_name: example_project
+    project_root: $project/rebuild
+    main_branch: rebuild
+EOF
+rm -f "$OPEN_LOG"
+(cd "$project/rebuild" && HOME="$tmp/redmine-home" REDMINE_API_KEY=secret-key \
+    "$MRSK_BIN" redmine --show >"$tmp/redmine-show.out")
+wait "$redmine_server"
+test "$(cat "$tmp/redmine-show.out")" = 'Fix login
+
+Steps:
+1. Sign in'
+grep -q '^GET /issues/3454.json ' "$tmp/redmine.request"
+grep -qi '^X-Redmine-API-Key: secret-key' "$tmp/redmine.request"
+test ! -e "$OPEN_LOG"
+
 git -C "$project/rebuild" switch -qc feature/no-issue
 if (cd "$project/rebuild" && "$MRSK_BIN" redmine >"$tmp/redmine-branch.out" 2>&1); then
     echo "expected redmine to reject a branch without an issue ID" >&2
