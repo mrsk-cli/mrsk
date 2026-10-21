@@ -2586,6 +2586,19 @@ static int command_delete_all(Project *project, int argc, char **argv)
         return 1;
     }
 
+    if (merged) {
+        // Otherwise a missing main_branch makes every merge-base check fail and nothing is removed.
+        char *const verify[] = {
+            "git", "-C", project->project_root, "rev-parse", "--verify", "--quiet", "--end-of-options",
+            project->main_branch, NULL
+        };
+        if (run_process(verify, true) != 0) {
+            fprintf(stderr, "mrsk: main_branch %s not found in %s\n",
+                    project->main_branch, project->project_root);
+            return 1;
+        }
+    }
+
     FILE *output = tmpfile();
     if (output == NULL) {
         fprintf(stderr, "mrsk: cannot create temporary file: %s\n", strerror(errno));
