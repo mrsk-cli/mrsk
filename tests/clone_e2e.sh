@@ -187,7 +187,10 @@ for repository in \
     delete_all \
     updater \
     daemon \
-    list
+    list \
+    bump-migration-version \
+    dbst \
+    prune
 do
     reserved_index=$((reserved_index + 1))
     reserved="$tmp/reserved-$reserved_index"

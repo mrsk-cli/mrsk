@@ -749,7 +749,7 @@ static bool reserved_project_name(const char *name)
         "--help", "-h", "__worktree-target-branch-updater-run",
         "configure", "clone", "redmine", "review", "rails-schema-confl", "shell-init",
         "new", "open", "remove", "delete_all", "updater", "daemon", "list",
-        "bump-migration-version"
+        "bump-migration-version", "dbst", "prune"
     };
     for (size_t i = 0; i < sizeof(names) / sizeof(names[0]); i++) {
         if (strcmp(name, names[i]) == 0) {
