@@ -210,6 +210,20 @@ git -C "$project/merged-two" commit --quiet --allow-empty -m unmerged
 test ! -e "$project/merged-one"
 ! git -C "$project/rebuild" show-ref --verify --quiet refs/heads/merged/one
 test -d "$project/merged-two"
+mkdir -p "$tmp/missing-main-home/.mrsk"
+cat > "$tmp/missing-main-home/.mrsk/config.yml" <<EOF
+projects:
+  - project_name: example_project
+    project_root: $project/rebuild
+    main_branch: no-such-branch
+EOF
+if HOME="$tmp/missing-main-home" "$MRSK_BIN" example_project delete_all --merged \
+    2>"$tmp/missing-main.err"; then
+    echo "delete_all --merged succeeded with a missing main_branch" >&2
+    exit 1
+fi
+grep -q 'main_branch no-such-branch not found' "$tmp/missing-main.err"
+test -d "$project/merged-two"
 "$MRSK_BIN" example_project remove merged-two
 
 "$MRSK_BIN" example_project new delete/one
