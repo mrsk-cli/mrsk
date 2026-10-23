@@ -186,7 +186,6 @@ for repository in \
     remove \
     delete_all \
     updater \
-    daemon \
     list \
     bump-migration-version \
     dbst \

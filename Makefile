@@ -54,7 +54,6 @@ ifeq ($(UNAME),Darwin)
 		"$(DESTDIR)$(PREFIX)/libexec/$(UPDATER_APP_NAME).app"
 	ln -sf "../libexec/$(UPDATER_APP_NAME).app/Contents/Resources/worktree-target-branch-updater" \
 		"$(DESTDIR)$(PREFIX)/bin/worktree-target-branch-updater"
-	rm -f "$(DESTDIR)$(PREFIX)/bin/work-daemon"
 	@if [ -z "$(DESTDIR)" ]; then \
 		/System/Library/Frameworks/CoreServices.framework/Frameworks/LaunchServices.framework/Support/lsregister \
 			-f "$(PREFIX)/libexec/$(UPDATER_APP_NAME).app"; \
