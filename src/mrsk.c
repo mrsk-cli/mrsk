@@ -748,7 +748,7 @@ static bool reserved_project_name(const char *name)
     static const char *const names[] = {
         "--help", "-h", "__worktree-target-branch-updater-run",
         "configure", "clone", "redmine", "review", "rails-schema-confl", "shell-init",
-        "new", "open", "remove", "delete_all", "updater", "daemon", "list",
+        "new", "open", "remove", "delete_all", "updater", "list",
         "bump-migration-version", "dbst", "prune"
     };
     for (size_t i = 0; i < sizeof(names) / sizeof(names[0]); i++) {
@@ -3440,7 +3440,6 @@ int main(int argc, char **argv)
         {"remove", command_remove},
         {"delete_all", command_delete_all},
         {"updater", command_updater},
-        {"daemon", command_updater},
         {"list", command_list},
         {"bump-migration-version", command_bump_migration_version},
         {"dbst", command_dbst},
