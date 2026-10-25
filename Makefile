@@ -41,17 +41,9 @@ endif
 	install -m 0755 mrsk "$(DESTDIR)$(PREFIX)/bin/mrsk"
 	install -m 0755 dist/ocr "$(DESTDIR)$(PREFIX)/bin/ocr"
 ifeq ($(UNAME),Darwin)
-	install -d "$(DESTDIR)$(PREFIX)/libexec/$(UPDATER_APP_NAME).app/Contents/MacOS" \
-		"$(DESTDIR)$(PREFIX)/libexec/$(UPDATER_APP_NAME).app/Contents/Resources"
-	install -m 0755 mrsk "$(DESTDIR)$(PREFIX)/libexec/$(UPDATER_APP_NAME).app/Contents/MacOS/$(UPDATER_APP_NAME)"
-	install -m 0755 worktree-target-branch-updater \
-		"$(DESTDIR)$(PREFIX)/libexec/$(UPDATER_APP_NAME).app/Contents/Resources/worktree-target-branch-updater"
-	install -m 0644 macos/Info.plist \
-		"$(DESTDIR)$(PREFIX)/libexec/$(UPDATER_APP_NAME).app/Contents/Info.plist"
-	install -m 0644 assets/WorktreeTargetBranchUpdater.icns \
-		"$(DESTDIR)$(PREFIX)/libexec/$(UPDATER_APP_NAME).app/Contents/Resources/WorktreeTargetBranchUpdater.icns"
-	codesign --force --deep --sign - \
-		"$(DESTDIR)$(PREFIX)/libexec/$(UPDATER_APP_NAME).app"
+	install -d "$(DESTDIR)$(PREFIX)/libexec"
+	rm -rf "$(DESTDIR)$(PREFIX)/libexec/$(UPDATER_APP_NAME).app"
+	cp -R "$(UPDATER_APP)" "$(DESTDIR)$(PREFIX)/libexec/"
 	ln -sf "../libexec/$(UPDATER_APP_NAME).app/Contents/Resources/worktree-target-branch-updater" \
 		"$(DESTDIR)$(PREFIX)/bin/worktree-target-branch-updater"
 	@if [ -z "$(DESTDIR)" ]; then \
