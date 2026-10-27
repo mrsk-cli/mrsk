@@ -262,6 +262,16 @@ grep -q '^DATABASE_URL=postgresql://env@localhost/env_development_lookup_env$' \
 DATABASE_URL=postgresql://env@localhost/env_development "$MRSK_BIN" remove lookup/env
 grep -q 'DROP DATABASE IF EXISTS "env_development_lookup_env"' "$PSQL_LOG"
 
+printf 'DATABASE_URL="postgresql://dev@localhost/quoted_development"\n' > "$project/main/.env"
+"$MRSK_BIN" new -d lookup/quoted
+grep -q 'CREATE DATABASE "quoted_development_lookup_quoted" TEMPLATE "quoted_development"' \
+    "$PSQL_LOG"
+grep -q '^DATABASE_URL=postgresql://dev@localhost/quoted_development_lookup_quoted$' \
+    "$project/lookup-quoted/.env"
+"$MRSK_BIN" remove lookup/quoted
+grep -q 'DROP DATABASE IF EXISTS "quoted_development_lookup_quoted"' "$PSQL_LOG"
+printf 'KEY=value\n' > "$project/main/.env"
+
 mkdir -p "$project/main/config"
 cat > "$project/main/config/database.yml" <<'EOF'
 default: &default
