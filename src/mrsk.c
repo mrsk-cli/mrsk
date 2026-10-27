@@ -1534,7 +1534,7 @@ static char *read_env_database_url(const char *dir, const char *env_file)
     char *url = NULL;
     while (fgets(line, sizeof(line), file) != NULL) {
         if (strncmp(line, "DATABASE_URL=", 13) == 0) {
-            url = strdup(trim(line + 13));
+            url = copy_value(line + 13);
             break;
         }
     }
