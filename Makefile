@@ -1,6 +1,6 @@
 CC ?= cc
-CFLAGS ?= -std=c11 -O2
-CFLAGS += -Wall -Wextra -Wpedantic -Werror
+CFLAGS ?= -O2
+CFLAGS += -std=c11 -Wall -Wextra -Wpedantic -Werror
 PREFIX ?= /usr/local
 CHROME_EXTENSION_SRC := chrome-redmine-links
 CHROME_EXTENSION_DIST := dist/chrome-redmine-links
@@ -17,7 +17,7 @@ OCR_SOURCES := $(shell find $(OCR_DIR) -type f)
 all: mrsk dist/ocr
 
 mrsk: src/mrsk.c
-	$(CC) $(CFLAGS) -o $@ $<
+	$(CC) $(CPPFLAGS) $(CFLAGS) $(LDFLAGS) -o $@ $<
 
 dist/ocr: $(OCR_SOURCES)
 	install -d dist
