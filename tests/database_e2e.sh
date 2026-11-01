@@ -270,6 +270,15 @@ grep -q '^DATABASE_URL=postgresql://dev@localhost/quoted_development_lookup_quot
     "$project/lookup-quoted/.env"
 "$MRSK_BIN" remove lookup/quoted
 grep -q 'DROP DATABASE IF EXISTS "quoted_development_lookup_quoted"' "$PSQL_LOG"
+
+printf 'export DATABASE_URL=postgresql://dev@localhost/exported_development\n' > "$project/main/.env"
+"$MRSK_BIN" new -d lookup/exported
+grep -q 'CREATE DATABASE "exported_development_lookup_exported" TEMPLATE "exported_development"' \
+    "$PSQL_LOG"
+test "$(cat "$project/lookup-exported/.env")" = \
+    'export DATABASE_URL=postgresql://dev@localhost/exported_development_lookup_exported'
+"$MRSK_BIN" remove lookup/exported
+grep -q 'DROP DATABASE IF EXISTS "exported_development_lookup_exported"' "$PSQL_LOG"
 printf 'KEY=value\n' > "$project/main/.env"
 
 mkdir -p "$project/main/config"

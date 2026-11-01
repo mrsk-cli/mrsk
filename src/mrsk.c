@@ -1518,6 +1518,15 @@ static char *rails_path(const Project *project, const char *checkout)
     return result != NULL ? result : strdup(checkout);
 }
 
+/* Returns the value of a DATABASE_URL line; dotenv allows an "export " prefix. */
+static char *env_database_value(char *line)
+{
+    if (strncmp(line, "export ", 7) == 0) {
+        line += 7;
+    }
+    return strncmp(line, "DATABASE_URL=", 13) == 0 ? line + 13 : NULL;
+}
+
 static char *read_env_database_url(const char *dir, const char *env_file)
 {
     char *path = join_path(dir, env_file);
@@ -1533,8 +1542,9 @@ static char *read_env_database_url(const char *dir, const char *env_file)
     char line[4096];
     char *url = NULL;
     while (fgets(line, sizeof(line), file) != NULL) {
-        if (strncmp(line, "DATABASE_URL=", 13) == 0) {
-            url = copy_value(line + 13);
+        char *value = env_database_value(line);
+        if (value != NULL) {
+            url = copy_value(value);
             break;
         }
     }
@@ -1786,8 +1796,9 @@ static int rewrite_env_database(const char *dir, const char *env_file, const cha
     if (file != NULL) {
         char line[4096];
         while (fgets(line, sizeof(line), file) != NULL) {
-            if (!replaced && strncmp(line, "DATABASE_URL=", 13) == 0) {
-                fprintf(output, "DATABASE_URL=%s\n", url);
+            char *value = env_database_value(line);
+            if (!replaced && value != NULL) {
+                fprintf(output, "%.*s%s\n", (int)(value - line), line, url);
                 replaced = true;
             } else {
                 fputs(line, output);
