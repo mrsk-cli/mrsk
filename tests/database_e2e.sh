@@ -271,6 +271,18 @@ grep -q '^DATABASE_URL=postgresql://dev@localhost/quoted_development_lookup_quot
 "$MRSK_BIN" remove lookup/quoted
 grep -q 'DROP DATABASE IF EXISTS "quoted_development_lookup_quoted"' "$PSQL_LOG"
 
+printf 'DATABASE_URL=postgresql://dev@localhost/commented_development # main copy\n' > "$project/main/.env"
+"$MRSK_BIN" new -d lookup/commented
+grep -q 'CREATE DATABASE "commented_development_lookup_commented" TEMPLATE "commented_development"' \
+    "$PSQL_LOG"
+"$MRSK_BIN" remove lookup/commented
+
+printf 'DATABASE_URL="postgresql://dev@localhost/quoted_commented" # main copy\n' > "$project/main/.env"
+"$MRSK_BIN" new -d lookup/quoted-commented
+grep -q 'CREATE DATABASE "quoted_commented_lookup_quoted_commented" TEMPLATE "quoted_commented"' \
+    "$PSQL_LOG"
+"$MRSK_BIN" remove lookup/quoted-commented
+
 printf 'export DATABASE_URL=postgresql://dev@localhost/exported_development\n' > "$project/main/.env"
 "$MRSK_BIN" new -d lookup/exported
 grep -q 'CREATE DATABASE "exported_development_lookup_exported" TEMPLATE "exported_development"' \
