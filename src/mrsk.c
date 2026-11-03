@@ -1518,6 +1518,24 @@ static char *rails_path(const Project *project, const char *checkout)
     return result != NULL ? result : strdup(checkout);
 }
 
+/* Copies a .env or YAML value without its quotes or trailing " #" comment. */
+static char *plain_value(char *value)
+{
+    value = trim(value);
+    if (*value == '"' || *value == '\'') {
+        char *close = strchr(value + 1, *value);
+        if (close != NULL) {
+            close[1] = '\0';
+        }
+    } else {
+        char *comment = strstr(value, " #");
+        if (comment != NULL) {
+            *comment = '\0';
+        }
+    }
+    return copy_value(value);
+}
+
 /* Returns the value of a DATABASE_URL line; dotenv allows an "export " prefix. */
 static char *env_database_value(char *line)
 {
@@ -1544,7 +1562,7 @@ static char *read_env_database_url(const char *dir, const char *env_file)
     while (fgets(line, sizeof(line), file) != NULL) {
         char *value = env_database_value(line);
         if (value != NULL) {
-            url = copy_value(value);
+            url = plain_value(value);
             break;
         }
     }
@@ -1553,23 +1571,6 @@ static char *read_env_database_url(const char *dir, const char *env_file)
 }
 
 enum { YML_URL, YML_DATABASE, YML_HOST, YML_PORT, YML_USERNAME, YML_PASSWORD, YML_KEY_COUNT };
-
-static char *yml_value(char *value)
-{
-    value = trim(value);
-    if (*value == '"' || *value == '\'') {
-        char *close = strchr(value + 1, *value);
-        if (close != NULL) {
-            close[1] = '\0';
-        }
-    } else {
-        char *comment = strstr(value, " #");
-        if (comment != NULL) {
-            *comment = '\0';
-        }
-    }
-    return copy_value(value);
-}
 
 static bool yml_header(const char *text, const char *name, const char *anchor)
 {
@@ -1608,7 +1609,7 @@ static void read_yml_section(FILE *file, const char *name, const char *anchor,
             continue;
         }
         if (merge != NULL && *merge == NULL && strncmp(text, "<<:", 3) == 0) {
-            char *alias = yml_value(text + 3);
+            char *alias = plain_value(text + 3);
             if (alias != NULL && alias[0] == '*') {
                 *merge = strdup(alias + 1);
             }
@@ -1617,7 +1618,7 @@ static void read_yml_section(FILE *file, const char *name, const char *anchor,
         for (int i = 0; i < YML_KEY_COUNT; i++) {
             size_t length = strlen(keys[i]);
             if (values[i] == NULL && strncmp(text, keys[i], length) == 0) {
-                values[i] = yml_value(text + length);
+                values[i] = plain_value(text + length);
             }
         }
     }
