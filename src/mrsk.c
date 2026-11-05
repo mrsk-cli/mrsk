@@ -2113,6 +2113,10 @@ static char *worktree_path(const Project *project, const char *name)
 
     size_t parent_length = (size_t)(slash - project->project_root);
     size_t name_length = strlen(name);
+    // Shell completion adds a trailing slash to folder names.
+    while (name_length > 1 && name[name_length - 1] == '/') {
+        name_length--;
+    }
     char *path = malloc(parent_length + 1 + name_length + 1);
     if (path == NULL) {
         fprintf(stderr, "mrsk: out of memory\n");
