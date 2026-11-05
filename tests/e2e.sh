@@ -154,7 +154,8 @@ test ! -e "$project/feature-login"
 "$MRSK_BIN" another_project new feature/api
 test -d "$second_project/feature-api"
 test "$(git -C "$second_project/feature-api" branch --show-current)" = feature/api
-"$MRSK_BIN" another_project remove feature/api
+# Shell completion of the folder name adds a trailing slash.
+"$MRSK_BIN" another_project remove feature-api/
 test ! -e "$second_project/feature-api"
 
 if "$MRSK_BIN" list >"$tmp/ambiguous.out" 2>&1; then
