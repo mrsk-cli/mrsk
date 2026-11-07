@@ -291,6 +291,14 @@ test "$(cat "$project/lookup-exported/.env")" = \
     'export DATABASE_URL=postgresql://dev@localhost/exported_development_lookup_exported'
 "$MRSK_BIN" remove lookup/exported
 grep -q 'DROP DATABASE IF EXISTS "exported_development_lookup_exported"' "$PSQL_LOG"
+
+printf '  DATABASE_URL = postgresql://dev@localhost/spaced_development\n' > "$project/main/.env"
+"$MRSK_BIN" new -d lookup/spaced
+grep -q 'CREATE DATABASE "spaced_development_lookup_spaced" TEMPLATE "spaced_development"' \
+    "$PSQL_LOG"
+test "$(cat "$project/lookup-spaced/.env")" = \
+    '  DATABASE_URL = postgresql://dev@localhost/spaced_development_lookup_spaced'
+"$MRSK_BIN" remove lookup/spaced
 printf 'KEY=value\n' > "$project/main/.env"
 
 mkdir -p "$project/main/config"

@@ -1536,13 +1536,19 @@ static char *plain_value(char *value)
     return copy_value(value);
 }
 
-/* Returns the value of a DATABASE_URL line; dotenv allows an "export " prefix. */
+/* Returns the value of a DATABASE_URL line; dotenv allows an "export " prefix
+ * and spaces around the name and "=". */
 static char *env_database_value(char *line)
 {
-    if (strncmp(line, "export ", 7) == 0) {
-        line += 7;
+    line += strspn(line, " \t");
+    if (strncmp(line, "export", 6) == 0 && (line[6] == ' ' || line[6] == '\t')) {
+        line += 6 + strspn(line + 6, " \t");
     }
-    return strncmp(line, "DATABASE_URL=", 13) == 0 ? line + 13 : NULL;
+    if (strncmp(line, "DATABASE_URL", 12) != 0) {
+        return NULL;
+    }
+    line += 12 + strspn(line + 12, " \t");
+    return *line == '=' ? line + 1 + strspn(line + 1, " \t") : NULL;
 }
 
 static char *read_env_database_url(const char *dir, const char *env_file)
