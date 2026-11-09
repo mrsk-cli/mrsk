@@ -74,7 +74,7 @@ projects:
     copy_folders:
       - storage
   - project_name: another_project
-    project_root: "$second_project/main"
+    project_root: "$second_project/main/"
     main_branch: main
 EOF
 
@@ -151,6 +151,7 @@ fi
 "$MRSK_BIN" example_project remove feature/login
 test ! -e "$project/feature-login"
 
+# project_root of another_project ends with a slash in the config above.
 "$MRSK_BIN" another_project new feature/api
 test -d "$second_project/feature-api"
 test "$(git -C "$second_project/feature-api" branch --show-current)" = feature/api

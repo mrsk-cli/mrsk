@@ -438,6 +438,11 @@ static int load_config(Config *config, bool allow_absent)
                     path);
             return 1;
         }
+        // Worktrees are siblings of project_root, so `/x/main/` must mean `/x/main`.
+        size_t root_length = strlen(item->project_root);
+        while (root_length > 1 && item->project_root[root_length - 1] == '/') {
+            item->project_root[--root_length] = '\0';
+        }
         if (item->prefix != NULL && *item->prefix == '\0') {
             fprintf(stderr, "mrsk: %s: prefix cannot be empty\n", path);
             return 1;
