@@ -230,7 +230,11 @@ test -d "$project/merged-two"
 
 "$MRSK_BIN" example_project new delete/one
 "$MRSK_BIN" example_project new delete/two
-GIT_PROTECTED_BRANCHES="delete/two,other" "$MRSK_BIN" example_project delete_all
+GIT_PROTECTED_BRANCHES="delete/two,other" "$MRSK_BIN" example_project delete_all \
+    >"$tmp/delete-all.out"
+# Piped output keeps its order: the worktree goes before its branch.
+test "$(grep -n 'Removed .*/delete-one$' "$tmp/delete-all.out" | cut -d: -f1)" -lt \
+    "$(grep -n "Deleted branch delete/one " "$tmp/delete-all.out" | cut -d: -f1)"
 test -d "$project/rebuild"
 test ! -e "$project/delete-one"
 test -d "$project/delete-two"
