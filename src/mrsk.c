@@ -477,6 +477,8 @@ static int load_config(Config *config, bool allow_absent)
 
 static int run_process_with_output(char *const argv[], bool quiet, FILE *output)
 {
+    // Keep our earlier lines ahead of the child's when stdout is a pipe or file.
+    fflush(stdout);
     pid_t pid = fork();
     if (pid < 0) {
         fprintf(stderr, "mrsk: fork failed: %s\n", strerror(errno));
