@@ -331,6 +331,14 @@ grep -q '^DATABASE_URL=postgresql://dev:p%40ss%2Fw0rd@localhost:5433/yml_develop
 "$MRSK_BIN" remove lookup/yml
 grep -q 'DROP DATABASE IF EXISTS "yml_development_lookup_yml"' "$PSQL_LOG"
 
+printf 'KEY=value' > "$project/main/.env"
+"$MRSK_BIN" new -d lookup/no-newline
+grep -q '^KEY=value$' "$project/lookup-no-newline/.env"
+grep -q '^DATABASE_URL=postgresql://dev:p%40ss%2Fw0rd@localhost:5433/yml_development_lookup_no_newline$' \
+    "$project/lookup-no-newline/.env"
+"$MRSK_BIN" remove lookup/no-newline
+printf 'KEY=value\n' > "$project/main/.env"
+
 "$MRSK_BIN" new lookup/kept
 "$MRSK_BIN" new lookup/gone
 rm -rf "$project/lookup-gone"

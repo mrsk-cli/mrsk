@@ -1821,6 +1821,10 @@ static int rewrite_env_database(const char *dir, const char *env_file, const cha
         fclose(file);
     }
     if (!replaced) {
+        /* fflush updates buffer and size; a last line without "\n" needs one. */
+        if (fflush(output) == 0 && size > 0 && buffer[size - 1] != '\n') {
+            fputc('\n', output);
+        }
         fprintf(output, "DATABASE_URL=%s\n", url);
     }
     if (fclose(output) != 0 || buffer == NULL) {
