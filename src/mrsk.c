@@ -2479,6 +2479,22 @@ static int command_switch(Project *project, int argc, char **argv)
     return status;
 }
 
+/* Like worktree_path, but a numeric name also finds the prefixed folder that
+ * `mrsk new <number>` created, unless a folder with the bare name exists. */
+static char *existing_worktree_path(const Project *project, const char *name)
+{
+    char *path = worktree_path(project, name);
+    if (path == NULL || project->prefix == NULL || !numeric_name(name) ||
+        access(path, F_OK) == 0) {
+        return path;
+    }
+    free(path);
+    char *branch = project_branch_name(project, name);
+    path = branch != NULL ? worktree_path(project, branch) : NULL;
+    free(branch);
+    return path;
+}
+
 static int command_open(Project *project, int argc, char **argv)
 {
     if (argc != 1) {
@@ -2486,7 +2502,7 @@ static int command_open(Project *project, int argc, char **argv)
         return 2;
     }
 
-    char *path = worktree_path(project, argv[0]);
+    char *path = existing_worktree_path(project, argv[0]);
     if (path == NULL) {
         return 1;
     }
@@ -2563,7 +2579,7 @@ static int command_remove(Project *project, int argc, char **argv)
         return 2;
     }
 
-    char *path = worktree_path(project, name);
+    char *path = existing_worktree_path(project, name);
     if (path == NULL) {
         return 1;
     }

@@ -190,7 +190,8 @@ test -d "$project/DEV-000"
 
 (cd "$HOME" && "$MRSK_BIN" new 2490)
 test -d "$project/DEV-2490"
-"$MRSK_BIN" example_project remove DEV-2490
+"$MRSK_BIN" example_project remove 2490
+test ! -e "$project/DEV-2490"
 
 HOME="$HOME" PROJECT="$project" zsh -c '
     eval "$(command mrsk shell-init)"
