@@ -69,8 +69,8 @@ projects:
   - project_name: example_project
     project_root: "$project/rebuild"
     main_branch: rebuild
-    copy_files:
-      - .env
+    copy_files: # YAML comments are ignored
+      - .env # local secrets
     copy_folders:
       - storage
   - project_name: another_project
@@ -173,12 +173,12 @@ for directory in "$project" "$project/rebuild" "$project/rebuild/db/migrate"; do
 done
 
 cat > "$HOME/.mrsk/config.yml" <<EOF
-projects:
+projects: # YAML comments are ignored
   - project_name: example_project
-    project_root: "$project/rebuild"
-    main_branch: rebuild
-    default: true
-    prefix: DEV
+    project_root: "$project/rebuild" # main checkout
+    main_branch: rebuild # base for new branches
+    default: true # used outside any checkout
+    prefix: DEV # Redmine project
   - project_name: another_project
     project_root: "$second_project/main"
     main_branch: main
