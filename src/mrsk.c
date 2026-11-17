@@ -115,6 +115,32 @@ static char *copy_value(char *value)
     return strdup(value);
 }
 
+/* Drops a trailing " # comment", or anything after a closing quote. */
+static char *uncomment(char *value)
+{
+    value = trim(value);
+    if (*value == '#') {
+        *value = '\0';
+    } else if (*value == '"' || *value == '\'') {
+        char *close = strchr(value + 1, *value);
+        if (close != NULL) {
+            close[1] = '\0';
+        }
+    } else {
+        char *comment = strstr(value, " #");
+        if (comment != NULL) {
+            *comment = '\0';
+        }
+    }
+    return trim(value);
+}
+
+/* Copies a .env or YAML value without its quotes or trailing " #" comment. */
+static char *plain_value(char *value)
+{
+    return copy_value(uncomment(value));
+}
+
 static void free_project(Project *project)
 {
     free(project->name);
@@ -180,7 +206,7 @@ static int add_copy_path(Project *project, char *value, bool folder)
         return 1;
     }
     project->copy_paths = items;
-    char *path = copy_value(value);
+    char *path = plain_value(value);
     if (path == NULL) {
         fprintf(stderr, "mrsk: out of memory\n");
         return 1;
@@ -298,7 +324,7 @@ static int load_config(Config *config, bool allow_absent)
                 fclose(file);
                 return 1;
             }
-            config->redmine_url = copy_value(entry + 12);
+            config->redmine_url = plain_value(entry + 12);
             if (config->redmine_url == NULL) {
                 fprintf(stderr, "mrsk: out of memory\n");
                 fclose(file);
@@ -313,7 +339,8 @@ static int load_config(Config *config, bool allow_absent)
             continue;
         }
 
-        if (indentation == 0 && strcmp(entry, "projects:") == 0) {
+        if (indentation == 0 && strncmp(entry, "projects:", 9) == 0 &&
+            *uncomment(entry + 9) == '\0') {
             if (projects_list || config->project_count != 0) {
                 fprintf(stderr, "mrsk: %s:%lu: duplicate or mixed projects configuration\n",
                         path, line_number);
@@ -328,7 +355,7 @@ static int load_config(Config *config, bool allow_absent)
         if (list != NO_LIST && indentation == list_indentation &&
             strncmp(entry, "- ", 2) == 0) {
             int status = list == DATABASES ?
-                         add_database(project, trim(entry + 2), path, line_number) :
+                         add_database(project, uncomment(entry + 2), path, line_number) :
                          add_copy_path(project, entry + 2, list == COPY_FOLDERS);
             if (status != 0) {
                 fclose(file);
@@ -366,7 +393,7 @@ static int load_config(Config *config, bool allow_absent)
 
         *separator = '\0';
         char *key = trim(entry);
-        char *value = trim(separator + 1);
+        char *value = uncomment(separator + 1);
         if (!projects_list && project == NULL) {
             project = add_project(config);
             if (project == NULL) {
@@ -1523,24 +1550,6 @@ static char *rails_path(const Project *project, const char *checkout)
     }
     free(entries);
     return result != NULL ? result : strdup(checkout);
-}
-
-/* Copies a .env or YAML value without its quotes or trailing " #" comment. */
-static char *plain_value(char *value)
-{
-    value = trim(value);
-    if (*value == '"' || *value == '\'') {
-        char *close = strchr(value + 1, *value);
-        if (close != NULL) {
-            close[1] = '\0';
-        }
-    } else {
-        char *comment = strstr(value, " #");
-        if (comment != NULL) {
-            *comment = '\0';
-        }
-    }
-    return copy_value(value);
 }
 
 /* Returns the value of a DATABASE_URL line; dotenv allows an "export " prefix
