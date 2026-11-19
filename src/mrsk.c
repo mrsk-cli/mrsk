@@ -2891,7 +2891,8 @@ static int prune_databases(Project *project, const DatabaseEnv *env, bool force,
         for (int i = 0; i < DATABASE_ENV_COUNT; i++) {
             char *name = sources[i] != NULL ? own_database_name(sources[i], line + 9) : NULL;
             if (name != NULL) {
-                fprintf(keep, "%s\n", name);
+                // PostgreSQL cuts database names to 63 bytes, so compare with what it stored.
+                fprintf(keep, "%.63s\n", name);
             }
             free(name);
         }
