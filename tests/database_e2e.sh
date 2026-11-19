@@ -341,9 +341,13 @@ printf 'KEY=value\n' > "$project/main/.env"
 
 "$MRSK_BIN" new lookup/kept
 "$MRSK_BIN" new lookup/gone
+"$MRSK_BIN" new lookup/kept-with-a-branch-name-long-enough-for-postgres-to-cut
 rm -rf "$project/lookup-gone"
+# PostgreSQL stores database names cut to 63 bytes.
+long=yml_development_lookup_kept_with_a_branch_name_long_enough_for_postgres_to_cut
 printf '%s\n' yml_development yml_test yml_development_cache other_development_x \
-    yml_development_lookup_kept yml_development_lookup_gone yml_development_old > "$PSQL_DATABASES"
+    yml_development_lookup_kept yml_development_lookup_gone yml_development_old \
+    "$(printf '%.63s' "$long")" > "$PSQL_DATABASES"
 drops=$(grep -c 'DROP DATABASE' "$PSQL_LOG")
 "$MRSK_BIN" prune > "$tmp/prune.out" 2> "$tmp/prune.err"
 test "$(cat "$tmp/prune.out")" = "$(printf 'yml_development_lookup_gone\nyml_development_old')"
@@ -354,6 +358,7 @@ test "$(grep -c 'DROP DATABASE' "$PSQL_LOG")" = "$((drops + 2))"
 grep -q 'DROP DATABASE IF EXISTS "yml_development_lookup_gone"' "$PSQL_LOG"
 grep -q 'DROP DATABASE IF EXISTS "yml_development_old"' "$PSQL_LOG"
 "$MRSK_BIN" remove lookup/kept
+"$MRSK_BIN" remove lookup/kept-with-a-branch-name-long-enough-for-postgres-to-cut
 
 cat > "$HOME/.mrsk/config.yml" <<EOF
 project_root: "$project/main"
