@@ -470,6 +470,19 @@ static int load_config(Config *config, bool allow_absent)
         while (root_length > 1 && item->project_root[root_length - 1] == '/') {
             item->project_root[--root_length] = '\0';
         }
+        // The shell is not involved, so expand `~/x/main` here, like the shell would.
+        if (strncmp(item->project_root, "~/", 2) == 0) {
+            const char *home = getenv("HOME");
+            size_t length = strlen(home) + root_length;
+            char *expanded = malloc(length);
+            if (expanded == NULL) {
+                fprintf(stderr, "mrsk: out of memory\n");
+                return 1;
+            }
+            snprintf(expanded, length, "%s%s", home, item->project_root + 1);
+            free(item->project_root);
+            item->project_root = expanded;
+        }
         if (item->prefix != NULL && *item->prefix == '\0') {
             fprintf(stderr, "mrsk: %s: prefix cannot be empty\n", path);
             return 1;
