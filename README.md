@@ -194,7 +194,8 @@ install -d -m 700 "$HOME/.mrsk"
 
 With your editor, create `~/.mrsk/config.yml` with the following content.
 Replace `project_root` with the absolute checkout path and `main_branch` with
-an existing local branch. Do not use `~` or `$HOME` inside the YAML path.
+an existing local branch. A leading `~/` in `project_root` means your home
+directory; `$HOME` is not expanded.
 If you already have a config, add a project to its `projects` list instead of
 replacing the file; each project name must be unique.
 
