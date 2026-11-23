@@ -81,6 +81,12 @@ EOF
 git -C "$project/rebuild" switch -qc DEV-3454
 (cd "$project/rebuild" && "$MRSK_BIN" redmine)
 test "$(cat "$OPEN_LOG")" = "https://redmine.example.test/issues/3454"
+for branch in 3455 feature/3456; do
+    git -C "$project/rebuild" switch -qc "$branch"
+    (cd "$project/rebuild" && "$MRSK_BIN" redmine)
+    test "$(cat "$OPEN_LOG")" = "https://redmine.example.test/issues/${branch##*/}"
+done
+git -C "$project/rebuild" switch -q DEV-3454
 
 ruby -rsocket -rjson -e '
 server = TCPServer.new("127.0.0.1", 0)

@@ -470,8 +470,9 @@ IDs of migrations whose files are not on that upstream yet are shown in yellow.
 ### Redmine
 
 `redmine` opens `<redmine_url>/issues/<number>` in the default browser, using
-the issue number at the end of the current branch name. For example, branch
-`DEV-3454` opens `https://redmine.example.com/issues/3454`. When `redmine_url`
+the issue number at the end of the current branch name, after the last `-` or
+`/`. For example, branches `DEV-3454`, `feature/3454`, and `3454` open
+`https://redmine.example.com/issues/3454`. When `redmine_url`
 has no scheme, `https://` is used.
 
 `redmine --show` prints the issue's title, a blank line, and its description

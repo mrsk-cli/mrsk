@@ -2215,8 +2215,11 @@ static int command_redmine(const Config *config, int argc, char **argv)
     }
     fclose(output);
     branch[strcspn(branch, "\r\n")] = '\0';
-    char *separator = strrchr(branch, '-');
-    const char *issue = separator == NULL ? "" : separator + 1;
+    // The issue number is the last part of the branch name after "-" or "/", or the whole name.
+    const char *issue = branch + strlen(branch);
+    while (issue > branch && issue[-1] != '-' && issue[-1] != '/') {
+        issue--;
+    }
     if (!numeric_name(issue)) {
         fprintf(stderr, "mrsk: current branch does not end with an issue number: %s\n", branch);
         free(branch);
